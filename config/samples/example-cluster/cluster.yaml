@@ -1,0 +1,34 @@
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: my-cluster
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - 172.31.0.0/16
+    services:
+      cidrBlocks:
+        - 192.168.0.0/16
+    serviceDomain: cluster.local
+  topology:
+    classRef:
+      name: vates-rhel-prefilled
+    version: v1.36.0
+    variables:
+      - name: controlPlaneEndpoint
+        value:
+          host: "10.30.139.10"
+          port: 6443
+      - name: vmNamePrefix
+        value: "PFT-cluster1"
+      - name: use-kubevip
+        value:
+          enabled: true
+    controlPlane:
+      replicas: 3
+    workers:
+      machineDeployments:
+        - class: worker-prefilled
+          name: worker-prefilled-md-0
+          replicas: 5

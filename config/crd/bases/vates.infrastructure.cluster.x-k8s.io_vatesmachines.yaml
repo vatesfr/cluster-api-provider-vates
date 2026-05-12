@@ -1,0 +1,264 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: vatesmachines.vates.infrastructure.cluster.x-k8s.io
+spec:
+  group: vates.infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: VatesMachine
+    listKind: VatesMachineList
+    plural: vatesmachines
+    singular: vatesmachine
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.ready
+      name: Ready
+      type: string
+    - jsonPath: .status.providerID
+      name: ProviderID
+      priority: 1
+      type: string
+    - jsonPath: .spec.templateID
+      name: TemplateID
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: VatesMachine is the Schema for the vatesmachines API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: VatesMachineSpec defines the desired state of a Xen Orchestra
+              VM.
+            properties:
+              bootstrapData:
+                description: |-
+                  BootstrapData is the bootstrap data (cloud-init) to inject into the VM.
+                  If empty, the controller will try to read it from the owner Machine's bootstrap secret.
+                type: string
+              failureDomain:
+                description: FailureDomain is the failure domain unique identifier
+                  this Machine should be attached to, as defined in ClusterStatus.FailureDomains.
+                type: string
+              namePrefix:
+                description: NamePrefix is the prefix for the VM name.
+                type: string
+              networkConfig:
+                description: NetworkConfig specifies the network configuration for
+                  the VM.
+                properties:
+                  allowedIPRange:
+                    description: |-
+                      AllowedIPRange is a CIDR range of IPs allowed to access the VM (e.g. "10.30.139.0/24").
+                      Applied to all VIFs on the VM. If empty, no IP restriction is set.
+                    type: string
+                  guestConfig:
+                    description: |-
+                      GuestConfig is the cloud-init network configuration (netplan format) to apply inside the VM.
+                      This is passed directly to XO via the NetworkConfig field of CreateVM, allowing the guest
+                      OS to receive a static IP or custom network setup before the first boot.
+                      Example (netplan v2):
+                        version: 2
+                        ethernets:
+                          eth0:
+                            dhcp4: false
+                            addresses:
+                              - 10.30.139.10/16
+                            gateway4: 10.30.0.1
+                    type: string
+                  networks:
+                    description: Networks is a list of networks to attach to the VM.
+                    items:
+                      properties:
+                        name:
+                          description: Name is the XO network name to attach (alternative
+                            to NetworkID).
+                          type: string
+                        networkID:
+                          description: NetworkID is the XO network UUID to attach.
+                          type: string
+                      type: object
+                    type: array
+                type: object
+              poolID:
+                description: |-
+                  PoolID is the Xen Orchestra pool UUID where the VM will be created.
+                  If empty, the controller will use the template's pool.
+                type: string
+              poolName:
+                description: |-
+                  PoolName is the Xen Orchestra pool name where the VM will be created
+                  (alternative to PoolID).
+                type: string
+              providerID:
+                description: |-
+                  ProviderID is the Xen Orchestra provider ID (e.g. xenorchestra://pool-uuid/vm-uuid).
+                  Set by the controller after the VM is created.
+                type: string
+              resourceSet:
+                description: ResourceSet is the resource set configuration for the
+                  VM (CPU, RAM, disk).
+                properties:
+                  cpus:
+                    description: CPUs is the number of vCPUs.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  diskGB:
+                    description: DiskGB is the disk size in GB.
+                    format: int64
+                    minimum: 10
+                    type: integer
+                  memory:
+                    description: Memory is the memory allocated to the VM in Kubernetes
+                      resource format (e.g. "8Gi", "8192Mi").
+                    type: string
+                type: object
+              templateID:
+                description: TemplateID is the XO VM template UUID to clone.
+                type: string
+              templateName:
+                description: TemplateName is the XO VM template name to clone (alternative
+                  to TemplateID).
+                type: string
+            required:
+            - namePrefix
+            type: object
+          status:
+            description: VatesMachineStatus defines the observed state of VatesMachine.
+            properties:
+              addresses:
+                description: Addresses contains the VM's IP addresses.
+                items:
+                  description: NodeAddress contains information for the node's address.
+                  properties:
+                    address:
+                      description: The node address.
+                      type: string
+                    type:
+                      description: Node address type, one of Hostname, ExternalIP
+                        or InternalIP.
+                      type: string
+                  required:
+                  - address
+                  - type
+                  type: object
+                type: array
+              conditions:
+                description: Conditions represent the current state of the VatesMachine
+                  resource.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              failureMessage:
+                description: FailureMessage is the detailed error message (if any).
+                type: string
+              failureReason:
+                description: FailureReason is the reason for the failure (if any).
+                type: string
+              initialization:
+                description: |-
+                  Initialization provides observations of the VatesMachine initialization process.
+                  NOTE: This field is part of the Cluster API contract and is used to orchestrate provisioning.
+                properties:
+                  provisioned:
+                    description: |-
+                      provisioned is true when the infrastructure provider reports that the resource is fully provisioned.
+                      NOTE: This field is part of the Cluster API contract.
+                    type: boolean
+                type: object
+              providerID:
+                description: ProviderID is the Xen Orchestra provider ID (e.g. xenorchestra://pool-uuid/vm-uuid).
+                type: string
+              ready:
+                description: Ready indicates the VM is ready and the Kubernetes node
+                  has joined the cluster.
+                type: boolean
+            type: object
+        required:
+        - metadata
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

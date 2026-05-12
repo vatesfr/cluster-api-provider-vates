@@ -1,0 +1,70 @@
+name: Build and Push
+
+on:
+  push:
+
+env:
+  REGISTRY: git.vates.tech
+  STORAGE_DRIVER: vfs
+  BUILDAH_FORMAT: docker
+
+jobs:
+  lint:
+    runs-on: pft
+    container:
+      image: fedora:latest
+      options: --privileged
+    steps:
+      - name: Install dependencies
+        run: dnf install -y nodejs git make
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Lint
+        run: make lint
+
+  build:
+    runs-on: pft
+    container:
+      image: fedora:latest
+      options: --privileged
+    steps:
+      - name: Install dependencies
+        run: dnf install -y nodejs git buildah
+
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: buildah build -t $REGISTRY/${{ gitea.repository }}:check-${{ gitea.sha }} .
+
+  push:
+    if: ${{ startsWith(gitea.ref, 'refs/tags/') }}
+    needs: [lint, build]
+    runs-on: pft
+    container:
+      image: fedora:latest
+      options: --privileged
+    steps:
+      - name: Install dependencies
+        run: dnf install -y nodejs git buildah
+
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: buildah build -t $REGISTRY/${{ gitea.repository }}:${{ gitea.ref_name }} .
+
+      - name: Login to Gitea registry
+        run: buildah login -u ${{ gitea.actor }} -p ${{ secrets.TOKEN }} $REGISTRY
+
+      - name: Push image
+        run: buildah push $REGISTRY/${{ gitea.repository }}:${{ gitea.ref_name }}
+
+      - name: Tag and push latest
+        run: |
+          buildah tag $REGISTRY/${{ gitea.repository }}:${{ gitea.ref_name }} \
+                  $REGISTRY/${{ gitea.repository }}:latest
+          buildah push $REGISTRY/${{ gitea.repository }}:latest

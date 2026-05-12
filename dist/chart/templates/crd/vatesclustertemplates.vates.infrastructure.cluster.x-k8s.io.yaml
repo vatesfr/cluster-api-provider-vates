@@ -1,0 +1,106 @@
+{{- if .Values.crd.enable }}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-vates
+    cluster.x-k8s.io/v1beta1: v1beta2
+    cluster.x-k8s.io/v1beta2: v1beta2
+  name: vatesclustertemplates.vates.infrastructure.cluster.x-k8s.io
+spec:
+  group: vates.infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: VatesClusterTemplate
+    listKind: VatesClusterTemplateList
+    plural: vatesclustertemplates
+    singular: vatesclustertemplate
+  scope: Namespaced
+  versions:
+  - name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: VatesClusterTemplate is the Schema for the vatesclustertemplates
+          API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: VatesClusterTemplateSpec defines the desired state of VatesClusterTemplate.
+            properties:
+              template:
+                description: VatesClusterTemplateResource describes the data needed
+                  to create a VatesCluster from a template.
+                properties:
+                  spec:
+                    description: Spec is the specification of the desired behavior
+                      of the cluster.
+                    properties:
+                      controlPlaneEndpoint:
+                        description: ControlPlaneEndpoint is the endpoint for the
+                          control plane.
+                        properties:
+                          host:
+                            description: Host is the DNS name or IP of the API server.
+                            type: string
+                          port:
+                            description: Port is the port of the API server.
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
+                        required:
+                        - host
+                        - port
+                        type: object
+                      kubevip:
+                        description: |-
+                          KubeVIP configures the kube-vip static pod for control plane VIP management.
+                          When enabled, the controller injects kube-vip setup scripts into the
+                          cloud-init data of control plane machines.
+                        properties:
+                          enabled:
+                            description: Enabled enables kube-vip static pod on control
+                              plane nodes.
+                            type: boolean
+                        required:
+                        - enabled
+                        type: object
+                    type: object
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+          status:
+            description: VatesClusterTemplateStatus defines the observed state of
+              VatesClusterTemplate.
+            type: object
+        required:
+        - metadata
+        type: object
+    served: true
+    storage: true
+{{- end }}

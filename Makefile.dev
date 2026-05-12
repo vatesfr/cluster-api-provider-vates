@@ -1,0 +1,17 @@
+CONTAINER_TOOL ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
+IMG ?= ghcr.io/vatesfr/cluster-api-provider-vates:dev
+
+build:
+	$(MAKE) docker-build IMG=$(IMG)
+
+push:
+	rm -f /tmp/vates-capi-dev.tar && \
+	$(CONTAINER_TOOL) save $(IMG) -o /tmp/vates-capi-dev.tar && \
+	kind load image-archive /tmp/vates-capi-dev.tar --name kind
+
+deploy:
+	kubectl apply -k ./config/default
+	$(MAKE) deploy IMG=$(IMG)
+
+restart:
+	kubectl rollout restart deployment/vates-capi-controller-manager -n capi-system

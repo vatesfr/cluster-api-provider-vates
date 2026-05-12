@@ -1,0 +1,162 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: vatesmachinetemplates.vates.infrastructure.cluster.x-k8s.io
+spec:
+  group: vates.infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: VatesMachineTemplate
+    listKind: VatesMachineTemplateList
+    plural: vatesmachinetemplates
+    singular: vatesmachinetemplate
+  scope: Namespaced
+  versions:
+  - name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: VatesMachineTemplate is the Schema for the vatesmachinetemplates
+          API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: VatesMachineTemplateSpec defines the desired state of VatesMachineTemplate.
+            properties:
+              template:
+                description: VatesMachineTemplateResource describes the data needed
+                  to create a VatesMachine from a template.
+                properties:
+                  spec:
+                    description: Spec is the specification of the desired behavior
+                      of the machine.
+                    properties:
+                      bootstrapData:
+                        description: |-
+                          BootstrapData is the bootstrap data (cloud-init) to inject into the VM.
+                          If empty, the controller will try to read it from the owner Machine's bootstrap secret.
+                        type: string
+                      failureDomain:
+                        description: FailureDomain is the failure domain unique identifier
+                          this Machine should be attached to, as defined in ClusterStatus.FailureDomains.
+                        type: string
+                      namePrefix:
+                        description: NamePrefix is the prefix for the VM name.
+                        type: string
+                      networkConfig:
+                        description: NetworkConfig specifies the network configuration
+                          for the VM.
+                        properties:
+                          allowedIPRange:
+                            description: |-
+                              AllowedIPRange is a CIDR range of IPs allowed to access the VM (e.g. "10.30.139.0/24").
+                              Applied to all VIFs on the VM. If empty, no IP restriction is set.
+                            type: string
+                          guestConfig:
+                            description: |-
+                              GuestConfig is the cloud-init network configuration (netplan format) to apply inside the VM.
+                              This is passed directly to XO via the NetworkConfig field of CreateVM, allowing the guest
+                              OS to receive a static IP or custom network setup before the first boot.
+                              Example (netplan v2):
+                                version: 2
+                                ethernets:
+                                  eth0:
+                                    dhcp4: false
+                                    addresses:
+                                      - 10.30.139.10/16
+                                    gateway4: 10.30.0.1
+                            type: string
+                          networks:
+                            description: Networks is a list of networks to attach
+                              to the VM.
+                            items:
+                              properties:
+                                name:
+                                  description: Name is the XO network name to attach
+                                    (alternative to NetworkID).
+                                  type: string
+                                networkID:
+                                  description: NetworkID is the XO network UUID to
+                                    attach.
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      poolID:
+                        description: |-
+                          PoolID is the Xen Orchestra pool UUID where the VM will be created.
+                          If empty, the controller will use the template's pool.
+                        type: string
+                      poolName:
+                        description: |-
+                          PoolName is the Xen Orchestra pool name where the VM will be created
+                          (alternative to PoolID).
+                        type: string
+                      providerID:
+                        description: |-
+                          ProviderID is the Xen Orchestra provider ID (e.g. xenorchestra://pool-uuid/vm-uuid).
+                          Set by the controller after the VM is created.
+                        type: string
+                      resourceSet:
+                        description: ResourceSet is the resource set configuration
+                          for the VM (CPU, RAM, disk).
+                        properties:
+                          cpus:
+                            description: CPUs is the number of vCPUs.
+                            format: int32
+                            minimum: 1
+                            type: integer
+                          diskGB:
+                            description: DiskGB is the disk size in GB.
+                            format: int64
+                            minimum: 10
+                            type: integer
+                          memory:
+                            description: Memory is the memory allocated to the VM
+                              in Kubernetes resource format (e.g. "8Gi", "8192Mi").
+                            type: string
+                        type: object
+                      templateID:
+                        description: TemplateID is the XO VM template UUID to clone.
+                        type: string
+                      templateName:
+                        description: TemplateName is the XO VM template name to clone
+                          (alternative to TemplateID).
+                        type: string
+                    required:
+                    - namePrefix
+                    type: object
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+          status:
+            description: VatesMachineTemplateStatus defines the observed state of
+              VatesMachineTemplate.
+            type: object
+        required:
+        - metadata
+        type: object
+    served: true
+    storage: true

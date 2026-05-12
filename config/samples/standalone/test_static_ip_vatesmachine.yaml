@@ -1,0 +1,53 @@
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: VatesMachine
+metadata:
+  name: test-static-ip
+  namespace: default
+spec:
+  namePrefix: test-static-ip
+  templateID: fdda6714-7794-6f6b-c8d6-45bf08aaecc5
+  poolID: 6e0c5f16-923f-2971-a07d-ad1486f67309
+  networkConfig:
+    networks:
+      - name: "Pool-wide network associated with eth0 on VLAN60"
+  # Static IP test via native cloud-init (netplan)
+  # No nmcli, no DHCP. IP is configured before service startup.
+  bootstrapData: |
+    #cloud-config
+    network:
+      version: 2
+      ethernets:
+        eth0:
+          dhcp4: no
+          addresses:
+            - 10.30.139.10/16
+          routes:
+            - to: default
+              via: 10.30.0.1
+          nameservers:
+            addresses:
+              - 8.8.8.8
+    runcmd:
+      # Apply network config (netplan)
+      - netplan apply
+      # Wait for network to be up
+      - sleep 5
+      # Add Kubernetes v1.36 repository
+      - |
+        cat <<EOF > /etc/yum.repos.d/kubernetes.repo
+        [kubernetes]
+        name=Kubernetes
+        baseurl=https://pkgs.k8s.io/core:/stable:/v1.36/rpm/
+        enabled=1
+        gpgcheck=1
+        gpgkey=https://pkgs.k8s.io/core:/stable:/v1.36/rpm/repodata/repomd.xml.key
+        EOF
+      # Add EPEL for containerd
+      - dnf install -y epel-release
+      # Install packages
+      - dnf install -y containerd kubelet kubeadm kubectl --disableexcludes=kubernetes
+      # Start services
+      - systemctl enable --now containerd
+      - systemctl enable --now kubelet
+      # Init cluster (test)
+      - kubeadm init --pod-network-cidr=192.168.0.0/16
