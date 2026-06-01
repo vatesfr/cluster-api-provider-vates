@@ -180,7 +180,7 @@ func (r *VatesClusterReconciler) discoverControlPlaneEndpoint(ctx context.Contex
 			continue
 		}
 
-		if m.Spec.InfrastructureRef.Kind != "VatesMachine" {
+		if m.Spec.InfrastructureRef.Kind != infrastructurev1beta2.KindVatesMachine {
 			continue
 		}
 

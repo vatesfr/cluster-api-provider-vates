@@ -43,7 +43,9 @@ func (r *VatesMachineReconciler) reconcileNormal(ctx context.Context, vatesMachi
 	xoClient, err := vatesmachine.GetOrCreateXOClient(ctx, r.XoCreds, r.xoClient)
 	if err != nil {
 		logger.Error(err, "Failed to create/connect XO client")
-		vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "VatesConnectionFailed", err.Error())
+		if updateErr := vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "VatesConnectionFailed", err.Error()); updateErr != nil {
+			logger.Error(updateErr, "Failed to update condition")
+		}
 		return ctrl.Result{}, err
 	}
 	if xoClient == nil {
@@ -54,7 +56,9 @@ func (r *VatesMachineReconciler) reconcileNormal(ctx context.Context, vatesMachi
 	cloudConfig, err := vatesmachine.BuildCloudConfig(ctx, xoClient, bsResult.Data)
 	if err != nil {
 		logger.Error(err, "Failed to build cloud config")
-		vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "CloudConfigBuildFailed", err.Error())
+		if updateErr := vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "CloudConfigBuildFailed", err.Error()); updateErr != nil {
+			logger.Error(updateErr, "Failed to update condition")
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -67,14 +71,18 @@ func (r *VatesMachineReconciler) reconcileNormal(ctx context.Context, vatesMachi
 	templateID, err := vatesmachine.ResolveTemplateID(ctx, xoClient, vatesMachine.Spec.TemplateID, vatesMachine.Spec.TemplateName)
 	if err != nil {
 		logger.Error(err, "Failed to find template", "templateID", vatesMachine.Spec.TemplateID, "templateName", vatesMachine.Spec.TemplateName)
-		vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "TemplateNotFound", err.Error())
+		if updateErr := vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "TemplateNotFound", err.Error()); updateErr != nil {
+			logger.Error(updateErr, "Failed to update condition")
+		}
 		return ctrl.Result{}, err
 	}
 
 	poolID, err := vatesmachine.ResolvePoolID(ctx, xoClient, vatesMachine.Spec.PoolID, vatesMachine.Spec.PoolName)
 	if err != nil {
 		logger.Error(err, "Failed to find pool", "poolID", vatesMachine.Spec.PoolID, "poolName", vatesMachine.Spec.PoolName)
-		vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "PoolNotFound", err.Error())
+		if updateErr := vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "PoolNotFound", err.Error()); updateErr != nil {
+			logger.Error(updateErr, "Failed to update condition")
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -83,7 +91,9 @@ func (r *VatesMachineReconciler) reconcileNormal(ctx context.Context, vatesMachi
 		vmID, parseErr := xok8scommon.GetVMID(*vatesMachine.Status.ProviderID)
 		if parseErr != nil {
 			logger.Error(parseErr, "Failed to parse existing providerID")
-			vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "InvalidProviderID", parseErr.Error())
+			if updateErr := vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "InvalidProviderID", parseErr.Error()); updateErr != nil {
+				logger.Error(updateErr, "Failed to update condition")
+			}
 			return ctrl.Result{}, parseErr
 		}
 		vm, err = vatesmachine.LookupExistingVM(ctx, r.Client, xoClient, vatesMachine, vmID)

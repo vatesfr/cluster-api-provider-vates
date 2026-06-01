@@ -24,6 +24,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/scheme"
 )
 
+// KindVatesMachine is the Kind string for VatesMachine.
+const KindVatesMachine = "VatesMachine"
+
 var (
 	// SchemeGroupVersion is group version used to register these objects.
 	// This name is used by applyconfiguration generators (e.g. controller-gen).

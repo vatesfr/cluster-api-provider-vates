@@ -187,7 +187,7 @@ func GetOwnerMachine(ctx context.Context, c client.Client, vatesMachine *infrast
 
 	for i := range machineList.Items {
 		m := &machineList.Items[i]
-		if m.Spec.InfrastructureRef.Kind == "VatesMachine" && m.Spec.InfrastructureRef.Name == vatesMachine.Name {
+		if m.Spec.InfrastructureRef.Kind == infrastructurev1beta2.KindVatesMachine && m.Spec.InfrastructureRef.Name == vatesMachine.Name {
 			return m, nil
 		}
 	}

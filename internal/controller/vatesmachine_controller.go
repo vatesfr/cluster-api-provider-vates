@@ -87,7 +87,7 @@ func (r *VatesMachineReconciler) machineToVatesMachine(ctx context.Context, o cl
 	if !ok {
 		return nil
 	}
-	if machine.Spec.InfrastructureRef.Kind != "VatesMachine" {
+	if machine.Spec.InfrastructureRef.Kind != infrastructurev1beta2.KindVatesMachine {
 		return nil
 	}
 	return []reconcile.Request{
@@ -116,7 +116,7 @@ func (r *VatesMachineReconciler) secretToVatesMachine(ctx context.Context, o cli
 			if err := r.Get(ctx, types.NamespacedName{Namespace: secret.Namespace, Name: ref.Name}, machine); err != nil {
 				return nil
 			}
-			if machine.Spec.InfrastructureRef.Kind == "VatesMachine" {
+			if machine.Spec.InfrastructureRef.Kind == infrastructurev1beta2.KindVatesMachine {
 				return []reconcile.Request{
 					{
 						NamespacedName: types.NamespacedName{
