@@ -70,6 +70,15 @@ jobs:
 #          helm repo update
 #          helm install prometheus-crds prometheus-community/prometheus-operator-crds
 
+      - name: Create dummy XO credentials secret
+        run: |
+          kubectl create ns vates-capi-system 2>/dev/null || true
+          kubectl create secret generic xo-credentials \
+            --namespace vates-capi-system \
+            --from-literal=url="https://xoa.example.com" \
+            --from-literal=token="dummy-token" \
+            --from-literal=insecure="true"
+
       - name: Deploy manager via Helm
         run: |
           make helm-deploy
