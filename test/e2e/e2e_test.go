@@ -34,7 +34,7 @@ import (
 )
 
 // namespace where the project is deployed in
-const namespace = "vates-capi-system"
+const namespace = "capi-system"
 
 // serviceAccountName created for the project
 const serviceAccountName = "vates-capi-controller-manager"
@@ -62,6 +62,16 @@ var _ = Describe("Manager", Ordered, func() {
 			"pod-security.kubernetes.io/enforce=restricted")
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to label namespace with restricted policy")
+
+		By("creating the XO credentials secret")
+		cmd = exec.Command("kubectl", "create", "secret", "generic", "xo-credentials",
+			"--namespace", namespace,
+			"--from-literal=url=https://xoa.example.com",
+			"--from-literal=token=dummy-token",
+			"--from-literal=insecure=true",
+		)
+		_, err = utils.Run(cmd)
+		Expect(err).NotTo(HaveOccurred(), "Failed to create XO credentials secret")
 
 		By("installing CRDs")
 		cmd = exec.Command("make", "install")
