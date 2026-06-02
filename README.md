@@ -23,7 +23,7 @@ kubectl create secret generic xo-credentials \
   --from-literal=insecure="true"
 ```
 
-Then you can edit config/samples/machinetemplates to stick with your own environment:
+Then you can edit `config/samples/machinetemplates` to stick with your own environment:
 
 - `poolID`
 - `templateID` (XCP-ng machine template that can use `cloudini`, this machine can be prefiled, see the `config/samples/packers` example)
