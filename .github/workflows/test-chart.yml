@@ -2,6 +2,7 @@ name: Test Chart
 
 on:
   push:
+    branches: ['*']
   pull_request:
 
 permissions: {}
