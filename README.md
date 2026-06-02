@@ -6,16 +6,14 @@ on XenServer / XCP-ng pools as Kubernetes worker and control plane nodes.
 
 ## Quick start
 
+> **Prerequisites:** A management cluster, [clusterctl](https://cluster-api.sigs.k8s.io/clusterctl/overview.html), Xen Orchestra access (VM template UUID, pool UUID, network name). Edit `config/samples/machinetemplates/` with your environment values before applying.
+
 ```bash
 # Install CAPI on a management cluster
-clusterctl init --bootstrap kubeadm --control-plane kubeadm
+CLUSTER_TOPOLOGY=true clusterctl init --bootstrap kubeadm --control-plane kubeadm
 
-# Configure the provider repository (from local build):
-mkdir -p ~/.config/cluster-api/overrides/infrastructure-vates/v0.1.0
-make release-manifests IMG=ghcr.io/vatesfr/cluster-api-provider-vates:latest
-cp dist/infrastructure-components.yaml ~/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/
-cp dist/cluster-template.yaml ~/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/
-clusterctl init --infrastructure vates:v0.1.0
+# Build and deploy the vates provider
+kubectl apply -f dist/install.yaml
 
 # Create the XO credentials secret (required before creating clusters)
 kubectl create secret generic xo-credentials \
@@ -23,20 +21,24 @@ kubectl create secret generic xo-credentials \
   --from-literal=url="https://<your-xoa>" \
   --from-literal=token="<your-xo-token>" \
   --from-literal=insecure="true"
+```
 
+Then you can edit config/samples/machinetemplates to stick with your own environment:
+
+- `poolID`
+- `templateID` (XCP-ng machine template that can use `cloudini`, this machine can be prefiled, see the `config/samples/packers` example)
+- `network` name or ID
+
+Afterward you can apply the clusterClasses and machines templates:
+
+```bash
 # Deploy ClusterClass + machine templates (edit templateID/poolID/network first)
 kubectl apply -k config/samples/clusterclass/
 kubectl apply -k config/samples/machinetemplates/
 
-# Create a cluster
-clusterctl generate cluster my-cluster \
-  --control-plane-machine-count 1 \
-  --worker-machine-count 3 \
-  --infrastructure vates:v0.1.0 \
-  --kubernetes-version v1.36.0 | kubectl apply -f -
+# Create a cluster (with the template from config/samples/example-cluster/)
+kubectl apply -k config/samples/example-cluster/
 ```
-
-> **Prerequisites:** A management cluster, [clusterctl](https://cluster-api.sigs.k8s.io/clusterctl/overview.html), Xen Orchestra access (VM template UUID, pool UUID, network name). Edit `config/samples/machinetemplates/` with your environment values before applying.
 
 ## Development
 
