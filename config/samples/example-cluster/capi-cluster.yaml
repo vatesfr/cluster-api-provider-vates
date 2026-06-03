@@ -13,7 +13,7 @@ spec:
     serviceDomain: cluster.local
   topology:
     classRef:
-      name: vates-rhel-prefilled
+      name: vates-rhel-from-scratch
     version: v1.36.0
     variables:
       - name: controlPlaneEndpoint
@@ -29,6 +29,6 @@ spec:
       replicas: 3
     workers:
       machineDeployments:
-        - class: worker-prefilled
-          name: worker-prefilled-md-0
+        - class: worker-from-scratch
+          name: worker-md-0
           replicas: 5

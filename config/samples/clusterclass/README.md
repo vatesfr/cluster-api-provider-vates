@@ -1,15 +1,12 @@
 # ClusterClass Templates
 
-Two ClusterClasses for **AlmaLinux 10 / RHEL-like** nodes on the Vates infrastructure provider:
+A single ClusterClass for **AlmaLinux 10 / RHEL-like** nodes on the Vates infrastructure provider:
 
-| ClusterClass | Control plane default | Worker flavors |
-|---|---|---|
-| `vates-rhel-from-scratch` | Full OS bootstrap (containerd, kubelet, kubeadm installed at provisioning time) | `worker-from-scratch`, `worker-prefilled` |
-| `vates-rhel-prefilled` | Pre-baked image (Packer-built with containerd, kubelet, kubeadm pre-installed) | `worker-from-scratch`, `worker-prefilled` |
+| ClusterClass | Worker flavor |
+|---|---|
+| `vates-rhel-from-scratch` | `worker-from-scratch` |
 
-Both ClusterClasses expose the same two machine deployment classes:
-- **`worker-from-scratch`** — bootstraps the node from minimal OS (installs containerd, kubelet, kubeadm via cloud-init)
-- **`worker-prefilled`** — uses a pre-baked image (expects containerd, kubelet, kubeadm already present)
+Kubelet/kubeadm/kubectl are downloaded dynamically at bootstrap time from `https://dl.k8s.io/release/`, matching the version specified in the Cluster's `spec.topology.version`.
 
 ## Apply once
 
@@ -34,24 +31,16 @@ config/samples/
 ├── clusterclass/                          # ClusterClass + non-machine templates
 │   ├── kustomization.yaml
 │   ├── rhel-vatesclustertemplate.yaml     # shared VatesClusterTemplate
-│   ├── from-scratch/
-│   │   ├── clusterclass-rhel-from-scratch.yaml
-│   │   ├── rhel-from-scratch-control-plane.yaml
-│   │   └── rhel-from-scratch-worker.yaml
-│   └── prefilled/
-│       ├── clusterclass-rhel-prefilled.yaml
-│       ├── rhel-prefilled-control-plane.yaml
-│       └── rhel-prefilled-worker.yaml
+│   └── from-scratch/
+│       ├── clusterclass-rhel-from-scratch.yaml
+│       ├── rhel-from-scratch-control-plane.yaml
+│       └── rhel-from-scratch-worker.yaml
 └── machinetemplates/                      # VatesMachineTemplate (edit per environment)
     ├── kustomization.yaml
-    ├── from-scratch/
-    │   ├── kustomization.yaml
-    │   ├── rhel-vatesmachinetemplate-cp-from-scratch.yaml
-    │   └── rhel-vatesmachinetemplate-worker-from-scratch.yaml
-    └── prefilled/
+    └── from-scratch/
         ├── kustomization.yaml
-        ├── rhel-vatesmachinetemplate-cp-prefilled.yaml
-        └── rhel-vatesmachinetemplate-worker-prefilled.yaml
+        ├── rhel-vatesmachinetemplate-cp-from-scratch.yaml
+        └── rhel-vatesmachinetemplate-worker-from-scratch.yaml
 ```
 
 ## Customising for your Xen Orchestra environment
@@ -60,7 +49,7 @@ The VatesMachineTemplate manifests in `config/samples/machinetemplates/` referen
 
 | Field | Description |
 |---|---|
-| `spec.template.spec.templateID` | UUID of the VM template (e.g. the Packer-built AlmaLinux 10 image) |
+| `spec.template.spec.templateID` | UUID of the VM template (AlmaLinux 10 with containerd and Xen guest tools) |
 | `spec.template.spec.poolID` | UUID of your Xen Orchestra pool |
 | `spec.template.spec.networkConfig.networks[].name` | Name of the network attached to the VM |
 

@@ -5,7 +5,4 @@ resources:
   - rhel-vatesclustertemplate.yaml
   - from-scratch/rhel-from-scratch-control-plane.yaml
   - from-scratch/rhel-from-scratch-worker.yaml
-  - prefilled/rhel-prefilled-control-plane.yaml
-  - prefilled/rhel-prefilled-worker.yaml
-  - prefilled/clusterclass-rhel-prefilled.yaml
   - from-scratch/clusterclass-rhel-from-scratch.yaml

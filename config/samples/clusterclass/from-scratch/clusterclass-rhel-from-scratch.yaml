@@ -64,7 +64,6 @@ spec:
               machineDeploymentClass:
                 names:
                   - worker-from-scratch
-                  - worker-prefilled
           jsonPatches:
             - op: replace
               path: /spec/template/spec/namePrefix
@@ -79,7 +78,6 @@ spec:
               machineDeploymentClass:
                 names:
                   - worker-from-scratch
-                  - worker-prefilled
           jsonPatches:
             - op: add
               path: /spec/template/spec/preKubeadmCommands/-
@@ -118,7 +116,7 @@ spec:
             - op: add
               path: /spec/template/spec/kubeadmConfigSpec/postKubeadmCommands/-
               valueFrom:
-                template: kubectl --kubeconfig=/etc/kubernetes/super-admin.conf --server=https://127.0.0.1:6443 apply --validate=false -f https://raw.githubusercontent.com/projectcalico/calico/v3.32.0/manifests/calico.yaml && kubectl --kubeconfig=/etc/kubernetes/super-admin.conf --server=https://127.0.0.1:6443 patch ds -n kube-system calico-node --type json -p='[{"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"IP_AUTODETECTION_METHOD","value":"kubernetes-internal-ip"}},{"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"IP6_AUTODETECTION_METHOD","value":"kubernetes-internal-ip"}}]' && kubectl --kubeconfig=/etc/kubernetes/super-admin.conf --server=https://127.0.0.1:6443 rollout status -n kube-system ds/calico-node --timeout=120s
+                template: kubectl --kubeconfig=/etc/kubernetes/super-admin.conf --server=https://127.0.0.1:6443 apply --validate=false -f https://raw.githubusercontent.com/projectcalico/calico/v3.32.0/manifests/calico.yaml && kubectl --kubeconfig=/etc/kubernetes/super-admin.conf --server=https://127.0.0.1:6443 patch ds -n kube-system calico-node --type json -p='[{"op":"add","path":"/spec/template/spec/initContainers/1/env/-","value":{"name":"SLEEP","value":"false"}},{"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"IP_AUTODETECTION_METHOD","value":"kubernetes-internal-ip"}},{"op":"add","path":"/spec/template/spec/containers/0/env/-","value":{"name":"IP6_AUTODETECTION_METHOD","value":"kubernetes-internal-ip"}}]'
   infrastructure:
     templateRef:
       apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
@@ -159,26 +157,3 @@ spec:
             apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
             kind: VatesMachineTemplate
             name: rhel-worker-from-scratch
-      - class: worker-prefilled
-        healthCheck:
-          checks:
-            nodeStartupTimeoutSeconds: 600
-            unhealthyNodeConditions:
-              - type: Ready
-                status: "False"
-                timeoutSeconds: 300
-              - type: Ready
-                status: Unknown
-                timeoutSeconds: 300
-          remediation:
-            maxInFlight: 1
-        bootstrap:
-          templateRef:
-            apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
-            kind: KubeadmConfigTemplate
-            name: rhel-prefilled-worker
-        infrastructure:
-          templateRef:
-            apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
-            kind: VatesMachineTemplate
-            name: rhel-worker-prefilled
