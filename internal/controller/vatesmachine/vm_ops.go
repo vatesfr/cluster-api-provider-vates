@@ -228,7 +228,7 @@ func ResolveVMIP(ctx context.Context, xoClient *xok8scommon.XoClient, vm *payloa
 		return vmIP
 	}
 
-	for attempt := 0; attempt < 30; attempt++ {
+	for attempt := range 30 {
 		select {
 		case <-ctx.Done():
 			logger.Info("Context cancelled while resolving VM IP", "id", vm.ID.String())
