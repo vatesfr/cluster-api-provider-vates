@@ -63,7 +63,6 @@ make -f Makefile.dev restart  # Restart the controller pod
 │   ├── manager/                   # Manager Deployment
 │   ├── rbac/                      # Generated RBAC (DO NOT EDIT)
 ├── examples/                      # Example manifests
-│   ├── ccm/                       # CCM deployment + ClusterResourceSet
 │   ├── clusterclass/              # ClusterClass + templates
 │   ├── clusterctl/                # Template for clusterctl generate
 │   ├── machinetemplates/          # VatesMachineTemplate (edit per env)
