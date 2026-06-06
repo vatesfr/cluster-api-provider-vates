@@ -22,11 +22,8 @@ import (
 func (r *VatesMachineReconciler) reconcileNormal(ctx context.Context, vatesMachine *infrastructurev1beta2.VatesMachine) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	if controllerutil.AddFinalizer(vatesMachine, vatesMachineFinalizer) {
-		if err := r.Update(ctx, vatesMachine); err != nil {
-			logger.Error(err, "Failed to add finalizer")
-			return ctrl.Result{}, err
-		}
+	if err := r.ensureFinalizer(ctx, vatesMachine); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	if result, err := r.tryFastPath(ctx, vatesMachine); result != nil {
@@ -63,38 +60,13 @@ func (r *VatesMachineReconciler) reconcileNormal(ctx context.Context, vatesMachi
 		return ctrl.Result{}, err
 	}
 
-	if bsResult.Machine != nil {
-		if _, ok := bsResult.Machine.Labels[clusterv1.MachineControlPlaneLabel]; ok {
-			clusterName := bsResult.Machine.Labels["cluster.x-k8s.io/cluster-name"]
-			if clusterName != "" {
-				vatesCluster, err := vatesmachine.GetVatesCluster(ctx, r.Client, vatesMachine.Namespace, clusterName)
-				if err != nil {
-					logger.Error(err, "Failed to get VatesCluster for kube-vip injection")
-				} else if vatesCluster != nil && vatesCluster.Spec.ControlPlaneLB != nil && *vatesCluster.Spec.ControlPlaneLB == "kube-vip" {
-					cloudConfig, err = vatesmachine.InjectKubeVIP(ctx, r.Client, vatesMachine, bsResult.Machine, vatesCluster, cloudConfig)
-					if err != nil {
-						return ctrl.Result{}, err
-					}
-				}
-			}
-		}
+	cloudConfig, err = r.injectKubeVIPIfNeeded(ctx, cloudConfig, bsResult, vatesMachine)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
-	vmName := vatesMachine.Spec.NamePrefix
-	if bsResult.Machine != nil {
-		if cn := bsResult.Machine.Labels["cluster.x-k8s.io/cluster-name"]; cn != "" {
-			role := ""
-			np := vatesMachine.Spec.NamePrefix
-			for _, s := range []string{"-cp", "-worker"} {
-				if strings.HasSuffix(np, s) {
-					role = s
-					np = strings.TrimSuffix(np, s)
-					break
-				}
-			}
-			vmName = np + cn + role
-		}
-	}
+	vmName := r.buildVMName(vatesMachine, bsResult)
+
 	templateID, err := vatesmachine.ResolveTemplateID(ctx, xoClient, vatesMachine.Spec.TemplateID, vatesMachine.Spec.TemplateName)
 	if err != nil {
 		logger.Error(err, "Failed to find template", "templateID", vatesMachine.Spec.TemplateID, "templateName", vatesMachine.Spec.TemplateName)
@@ -150,6 +122,72 @@ func (r *VatesMachineReconciler) reconcileNormal(ctx context.Context, vatesMachi
 	return ctrl.Result{}, nil
 }
 
+func (r *VatesMachineReconciler) ensureFinalizer(ctx context.Context, vatesMachine *infrastructurev1beta2.VatesMachine) error {
+	if controllerutil.AddFinalizer(vatesMachine, vatesMachineFinalizer) {
+		logger := log.FromContext(ctx)
+		if err := r.Update(ctx, vatesMachine); err != nil {
+			logger.Error(err, "Failed to add finalizer")
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *VatesMachineReconciler) injectKubeVIPIfNeeded(
+	ctx context.Context,
+	cloudConfig string,
+	bsResult vatesmachine.ResolveBootstrapDataResult,
+	vatesMachine *infrastructurev1beta2.VatesMachine,
+) (string, error) {
+	logger := log.FromContext(ctx)
+	if bsResult.Machine == nil {
+		return cloudConfig, nil
+	}
+
+	if _, ok := bsResult.Machine.Labels[clusterv1.MachineControlPlaneLabel]; !ok {
+		return cloudConfig, nil
+	}
+
+	clusterName := bsResult.Machine.Labels["cluster.x-k8s.io/cluster-name"]
+	if clusterName == "" {
+		return cloudConfig, nil
+	}
+
+	vatesCluster, err := vatesmachine.GetVatesCluster(ctx, r.Client, vatesMachine.Namespace, clusterName)
+	if err != nil {
+		logger.Error(err, "Failed to get VatesCluster for kube-vip injection")
+		return cloudConfig, nil
+	}
+
+	if vatesCluster != nil && vatesCluster.Spec.ControlPlaneLB != nil && *vatesCluster.Spec.ControlPlaneLB == "kube-vip" {
+		cloudConfig, err = vatesmachine.InjectKubeVIP(ctx, r.Client, vatesMachine, bsResult.Machine, vatesCluster, cloudConfig)
+		if err != nil {
+			return "", err
+		}
+	}
+	return cloudConfig, nil
+}
+
+func (r *VatesMachineReconciler) buildVMName(vatesMachine *infrastructurev1beta2.VatesMachine, bsResult vatesmachine.ResolveBootstrapDataResult) string {
+	if bsResult.Machine == nil {
+		return vatesMachine.Spec.NamePrefix
+	}
+	cn := bsResult.Machine.Labels["cluster.x-k8s.io/cluster-name"]
+	if cn == "" {
+		return vatesMachine.Spec.NamePrefix
+	}
+	role := ""
+	np := vatesMachine.Spec.NamePrefix
+	for _, s := range []string{"-cp", "-worker"} {
+		if strings.HasSuffix(np, s) {
+			role = s
+			np = strings.TrimSuffix(np, s)
+			break
+		}
+	}
+	return np + cn + role
+}
+
 // tryFastPath returns a non-nil result when the VM already has a providerID
 // and exists in XO, meaning we can skip directly to the existing-VM path.
 func (r *VatesMachineReconciler) tryFastPath(ctx context.Context, vatesMachine *infrastructurev1beta2.VatesMachine) (*ctrl.Result, error) {
@@ -186,47 +224,49 @@ func (r *VatesMachineReconciler) tryFastPath(ctx context.Context, vatesMachine *
 func (r *VatesMachineReconciler) reconcileExistingVM(ctx context.Context, vatesMachine *infrastructurev1beta2.VatesMachine, vm *payloads.VM, xoClient *xok8scommon.XoClient) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	if !vatesMachine.Status.Ready {
-		var err error
-		vm, _, err = vatesmachine.StartVM(ctx, r.Client, xoClient, vatesMachine, vm)
-		if err != nil {
-			return ctrl.Result{}, err
+	if vatesMachine.Status.Ready {
+		if vatesMachine.Status.ProviderID != nil && *vatesMachine.Status.ProviderID != "" {
+			logger.Info("VatesMachine reconciled (fast path)", "name", vatesMachine.Name, "providerID", *vatesMachine.Status.ProviderID)
 		}
+		return ctrl.Result{}, nil
+	}
 
-		vmIP := vatesmachine.ResolveVMIP(ctx, xoClient, vm)
+	var err error
+	vm, _, err = vatesmachine.StartVM(ctx, r.Client, xoClient, vatesMachine, vm)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
-		if vmIP == "" {
-			logger.Info("VM existing but IP not yet reported, requeuing", "id", vm.ID.String())
-			if ue := vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "WaitingForIPAddress", "VM is running, waiting for IP address from Xen guest tools"); ue != nil {
-				return ctrl.Result{}, ue
-			}
-			return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
-		}
+	vmIP := vatesmachine.ResolveVMIP(ctx, xoClient, vm)
 
-		if err := vatesmachine.ManageVIFs(ctx, xoClient, vatesMachine, vm); err != nil {
-			logger.Error(err, "Failed to manage VIFs")
-			if ue := vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "VifManagementFailed", err.Error()); ue != nil {
-				return ctrl.Result{}, ue
-			}
-			return ctrl.Result{}, err
-		}
-
-		vatesMachine.Status.Addresses = []corev1.NodeAddress{
-			{
-				Type:    corev1.NodeInternalIP,
-				Address: vmIP,
-			},
-		}
-		vatesMachine.Status.Ready = true
-		vatesMachine.Status.Initialization = &infrastructurev1beta2.InitializationStatus{Provisioned: true}
-		if ue := vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionTrue, "VmReady", "VM is created, running and has an IP address"); ue != nil {
+	if vmIP == "" {
+		logger.Info("VM existing but IP not yet reported, requeuing", "id", vm.ID.String())
+		if ue := vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "WaitingForIPAddress", "VM is running, waiting for IP address from Xen guest tools"); ue != nil {
 			return ctrl.Result{}, ue
 		}
+		return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
 	}
 
-	if vatesMachine.Status.ProviderID != nil && *vatesMachine.Status.ProviderID != "" {
-		logger.Info("VatesMachine reconciled (fast path)", "name", vatesMachine.Name, "providerID", *vatesMachine.Status.ProviderID)
+	if err := vatesmachine.ManageVIFs(ctx, xoClient, vatesMachine, vm); err != nil {
+		logger.Error(err, "Failed to manage VIFs")
+		if ue := vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "VifManagementFailed", err.Error()); ue != nil {
+			return ctrl.Result{}, ue
+		}
+		return ctrl.Result{}, err
 	}
+
+	vatesMachine.Status.Addresses = []corev1.NodeAddress{
+		{
+			Type:    corev1.NodeInternalIP,
+			Address: vmIP,
+		},
+	}
+	vatesMachine.Status.Ready = true
+	vatesMachine.Status.Initialization = &infrastructurev1beta2.InitializationStatus{Provisioned: true}
+	if ue := vatesmachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionTrue, "VmReady", "VM is created, running and has an IP address"); ue != nil {
+		return ctrl.Result{}, ue
+	}
+
 	return ctrl.Result{}, nil
 }
 
