@@ -12,22 +12,22 @@ Kubelet/kubeadm/kubectl are downloaded dynamically at bootstrap time from `https
 
 ```bash
 # 1. ClusterClass + control plane/bootstrap templates
-kubectl apply -k config/samples/clusterclass/
+kubectl apply -k examples/clusterclass/
 
 # 2. Machine templates (edit templateID/poolID/network first)
-kubectl apply -k config/samples/machinetemplates/
+kubectl apply -k examples/machinetemplates/
 ```
 
 Then create a cluster:
 
 ```bash
-kubectl apply -k config/samples/example-cluster/
+kubectl apply -k examples/example-cluster/
 ```
 
 ## Directory layout
 
 ```
-config/samples/
+examples/
 ├── clusterclass/                          # ClusterClass + non-machine templates
 │   ├── kustomization.yaml
 │   ├── rhel-vatesclustertemplate.yaml     # shared VatesClusterTemplate
@@ -45,7 +45,7 @@ config/samples/
 
 ## Customising for your Xen Orchestra environment
 
-The VatesMachineTemplate manifests in `config/samples/machinetemplates/` reference VM template UUIDs, pool IDs, and network names that are specific to a given XenServer / XCP-ng pool. Before applying, update the following fields in each file:
+The VatesMachineTemplate manifests in `examples/machinetemplates/` reference VM template UUIDs, pool IDs, and network names that are specific to a given XenServer / XCP-ng pool. Before applying, update the following fields in each file:
 
 | Field | Description |
 |---|---|

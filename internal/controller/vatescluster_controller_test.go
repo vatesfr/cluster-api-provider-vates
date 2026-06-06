@@ -27,7 +27,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	infrastructurev1beta2 "git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2"
+	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 )
 
 var _ = Describe("VatesCluster Controller", func() {

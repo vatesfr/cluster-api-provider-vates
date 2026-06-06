@@ -1,16 +1,17 @@
 apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
 kind: VatesMachineTemplate
 metadata:
-  name: rhel-worker-from-scratch
+  name: rhel-cp-prefilled
 spec:
   template:
     spec:
-      namePrefix: worker
-      templateID: 7feecc4e-34ee-ef8c-ccd9-955d15612e0d
+      namePrefix: cp
+      templateID: f098e094-647b-14c2-4262-f3c8dc5c81c0
       poolID: 6e0c5f16-923f-2971-a07d-ad1486f67309
       resourceSet:
         cpus: 4
         memory: "8Gi"
+        diskSize: "30Gi"
       networkConfig:
         networks:
           - name: "Pool-wide network associated with eth0 on VLAN60"

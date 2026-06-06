@@ -17,7 +17,7 @@ import (
 	k8smocks "github.com/vatesfr/xenorchestra-k8s-common/mocks"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
-	infrastructurev1beta2 "git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2"
+	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 )
 
 var _ = Describe("MergeSSHKeysIntoCloudConfig", func() {
@@ -142,25 +142,38 @@ var _ = Describe("GetOwnerMachine", func() {
 	})
 
 	It("returns the Machine referencing this VatesMachine", func() {
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-			&clusterv1.Machine{
-				ObjectMeta: metav1.ObjectMeta{Name: "my-machine", Namespace: "default"},
-				Spec: clusterv1.MachineSpec{
-					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-						Kind: "VatesMachine",
-						Name: "my-xo-machine",
-					},
+		machine := &clusterv1.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-machine", Namespace: "default", UID: "machine-uid"},
+			Spec: clusterv1.MachineSpec{
+				InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+					Kind: "VatesMachine",
+					Name: "my-xo-machine",
 				},
 			},
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			machine,
 		).Build()
 
 		xm := &infrastructurev1beta2.VatesMachine{
-			ObjectMeta: metav1.ObjectMeta{Name: "my-xo-machine", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-xo-machine",
+				Namespace: "default",
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: clusterv1.GroupVersion.String(),
+						Kind:       "Machine",
+						Name:       "my-machine",
+						UID:        "machine-uid",
+						Controller: ptr.To(true),
+					},
+				},
+			},
 		}
-		machine, err := GetOwnerMachine(ctx, fakeClient, xm)
+		result, err := GetOwnerMachine(ctx, fakeClient, xm)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(machine).NotTo(BeNil())
-		Expect(machine.Name).To(Equal("my-machine"))
+		Expect(result).NotTo(BeNil())
+		Expect(result.Name).To(Equal("my-machine"))
 	})
 
 	It("returns nil when no Machine matches", func() {

@@ -8,7 +8,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	infrastructurev1beta2 "git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2"
+	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 )
 
 // UpdateCondition sets the "Ready" condition on the VatesMachine and persists
@@ -19,14 +19,18 @@ func UpdateCondition(ctx context.Context, c client.Client, vatesMachine *infrast
 }
 
 // SetCondition updates or adds a condition in the object's Conditions slice.
+// LastTransitionTime is only updated when the condition status changes.
 func SetCondition(vatesMachine *infrastructurev1beta2.VatesMachine, conditionType string, status metav1.ConditionStatus, reason, message string) {
 	now := metav1.Now()
 	for i, c := range vatesMachine.Status.Conditions {
 		if c.Type == conditionType {
+			// Only update LastTransitionTime when the status actually changes
+			if c.Status != status {
+				vatesMachine.Status.Conditions[i].LastTransitionTime = now
+			}
 			vatesMachine.Status.Conditions[i].Status = status
 			vatesMachine.Status.Conditions[i].Reason = reason
 			vatesMachine.Status.Conditions[i].Message = message
-			vatesMachine.Status.Conditions[i].LastTransitionTime = now
 			return
 		}
 	}

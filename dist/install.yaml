@@ -69,23 +69,26 @@ spec:
                     maximum: 65535
                     minimum: 1
                     type: integer
+                  subnet:
+                    description: |-
+                      Subnet is the CIDR subnet mask used by the control plane load balancer.
+                      If not set, the load balancer implementation will auto-detect.
+                    format: int32
+                    maximum: 32
+                    minimum: 1
+                    type: integer
                 required:
                 - host
                 - port
                 type: object
-              kubevip:
+              controlPlaneLB:
                 description: |-
-                  KubeVIP configures the kube-vip static pod for control plane VIP management.
-                  When enabled, the controller injects kube-vip setup scripts into the
-                  cloud-init data of control plane machines.
-                properties:
-                  enabled:
-                    description: Enabled enables kube-vip static pod on control plane
-                      nodes.
-                    type: boolean
-                required:
-                - enabled
-                type: object
+                  ControlPlaneLB selects the control plane load balancer implementation.
+                  Supported values: "kube-vip". When set, the controller injects setup
+                  scripts into the cloud-init data of control plane machines.
+                enum:
+                - kube-vip
+                type: string
             type: object
           status:
             description: VatesClusterStatus defines the observed state of VatesCluster.
@@ -162,6 +165,14 @@ spec:
                     description: Port is the port of the API server.
                     format: int32
                     maximum: 65535
+                    minimum: 1
+                    type: integer
+                  subnet:
+                    description: |-
+                      Subnet is the CIDR subnet mask used by the control plane load balancer.
+                      If not set, the load balancer implementation will auto-detect.
+                    format: int32
+                    maximum: 32
                     minimum: 1
                     type: integer
                 required:
@@ -265,23 +276,26 @@ spec:
                             maximum: 65535
                             minimum: 1
                             type: integer
+                          subnet:
+                            description: |-
+                              Subnet is the CIDR subnet mask used by the control plane load balancer.
+                              If not set, the load balancer implementation will auto-detect.
+                            format: int32
+                            maximum: 32
+                            minimum: 1
+                            type: integer
                         required:
                         - host
                         - port
                         type: object
-                      kubevip:
+                      controlPlaneLB:
                         description: |-
-                          KubeVIP configures the kube-vip static pod for control plane VIP management.
-                          When enabled, the controller injects kube-vip setup scripts into the
-                          cloud-init data of control plane machines.
-                        properties:
-                          enabled:
-                            description: Enabled enables kube-vip static pod on control
-                              plane nodes.
-                            type: boolean
-                        required:
-                        - enabled
-                        type: object
+                          ControlPlaneLB selects the control plane load balancer implementation.
+                          Supported values: "kube-vip". When set, the controller injects setup
+                          scripts into the cloud-init data of control plane machines.
+                        enum:
+                        - kube-vip
+                        type: string
                     type: object
                 required:
                 - spec
@@ -433,11 +447,10 @@ spec:
                     format: int32
                     minimum: 1
                     type: integer
-                  diskGB:
-                    description: DiskGB is the disk size in GB.
-                    format: int64
-                    minimum: 10
-                    type: integer
+                  diskSize:
+                    description: DiskSize is the disk size allocated to the VM in
+                      Kubernetes resource format (e.g. "30Gi", "50G").
+                    type: string
                   memory:
                     description: Memory is the memory allocated to the VM in Kubernetes
                       resource format (e.g. "8Gi", "8192Mi").
@@ -697,11 +710,10 @@ spec:
                             format: int32
                             minimum: 1
                             type: integer
-                          diskGB:
-                            description: DiskGB is the disk size in GB.
-                            format: int64
-                            minimum: 10
-                            type: integer
+                          diskSize:
+                            description: DiskSize is the disk size allocated to the
+                              VM in Kubernetes resource format (e.g. "30Gi", "50G").
+                            type: string
                           memory:
                             description: Memory is the memory allocated to the VM
                               in Kubernetes resource format (e.g. "8Gi", "8192Mi").
@@ -791,6 +803,17 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - events
   verbs:
   - create
@@ -802,6 +825,17 @@ rules:
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - addons.cluster.x-k8s.io
+  resources:
+  - clusterresourcesets
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - cluster.x-k8s.io
@@ -1209,6 +1243,7 @@ spec:
         - name: XOA_INSECURE
           value: "true"
         image: ghcr.io/vatesfr/cluster-api-provider-vates:latest
+        imagePullPolicy: IfNotPresent
         livenessProbe:
           httpGet:
             path: /healthz

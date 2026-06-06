@@ -13,9 +13,10 @@ import (
 
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
 	xok8scommon "github.com/vatesfr/xenorchestra-k8s-common"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
-	infrastructurev1beta2 "git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2"
-	vatesmachine "git.vates.tech/patrice.ferlet/vates-capi/internal/controller/vatesmachine"
+	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
+	vatesmachine "github.com/vatesfr/cluster-api-provider-vates/internal/controller/vatesmachine"
 )
 
 func (r *VatesMachineReconciler) reconcileNormal(ctx context.Context, vatesMachine *infrastructurev1beta2.VatesMachine) (ctrl.Result, error) {
@@ -62,12 +63,38 @@ func (r *VatesMachineReconciler) reconcileNormal(ctx context.Context, vatesMachi
 		return ctrl.Result{}, err
 	}
 
-	cloudConfig, err = vatesmachine.MaybeInjectKubeVIP(ctx, r.Client, vatesMachine, bsResult.Machine, cloudConfig)
-	if err != nil {
-		return ctrl.Result{}, err
+	if bsResult.Machine != nil {
+		if _, ok := bsResult.Machine.Labels[clusterv1.MachineControlPlaneLabel]; ok {
+			clusterName := bsResult.Machine.Labels["cluster.x-k8s.io/cluster-name"]
+			if clusterName != "" {
+				vatesCluster, err := vatesmachine.GetVatesCluster(ctx, r.Client, vatesMachine.Namespace, clusterName)
+				if err != nil {
+					logger.Error(err, "Failed to get VatesCluster for kube-vip injection")
+				} else if vatesCluster != nil && vatesCluster.Spec.ControlPlaneLB != nil && *vatesCluster.Spec.ControlPlaneLB == "kube-vip" {
+					cloudConfig, err = vatesmachine.InjectKubeVIP(ctx, r.Client, vatesMachine, bsResult.Machine, vatesCluster, cloudConfig)
+					if err != nil {
+						return ctrl.Result{}, err
+					}
+				}
+			}
+		}
 	}
 
 	vmName := vatesMachine.Spec.NamePrefix
+	if bsResult.Machine != nil {
+		if cn := bsResult.Machine.Labels["cluster.x-k8s.io/cluster-name"]; cn != "" {
+			role := ""
+			np := vatesMachine.Spec.NamePrefix
+			for _, s := range []string{"-cp", "-worker"} {
+				if strings.HasSuffix(np, s) {
+					role = s
+					np = strings.TrimSuffix(np, s)
+					break
+				}
+			}
+			vmName = np + cn + role
+		}
+	}
 	templateID, err := vatesmachine.ResolveTemplateID(ctx, xoClient, vatesMachine.Spec.TemplateID, vatesMachine.Spec.TemplateName)
 	if err != nil {
 		logger.Error(err, "Failed to find template", "templateID", vatesMachine.Spec.TemplateID, "templateName", vatesMachine.Spec.TemplateName)
@@ -98,6 +125,12 @@ func (r *VatesMachineReconciler) reconcileNormal(ctx context.Context, vatesMachi
 		}
 		vm, err = vatesmachine.LookupExistingVM(ctx, r.Client, xoClient, vatesMachine, vmID)
 	} else {
+		injectedCC, injErr := vatesmachine.InjectPoolID(cloudConfig, poolID.String())
+		if injErr != nil {
+			logger.Error(injErr, "Failed to inject pool ID into cloud-config, continuing")
+		} else {
+			cloudConfig = injectedCC
+		}
 		vm, err = vatesmachine.CreateVM(ctx, r.Client, xoClient, vatesMachine, poolID, templateID, cloudConfig, vmName)
 	}
 	if err != nil {
@@ -112,13 +145,8 @@ func (r *VatesMachineReconciler) reconcileNormal(ctx context.Context, vatesMachi
 	}
 
 	if vatesMachine.Status.ProviderID != nil && *vatesMachine.Status.ProviderID != "" {
-		if pErr := r.patchNodeProviderID(ctx, vatesMachine); pErr != nil {
-			logger.Error(pErr, "Failed to patch Node providerID (will retry)")
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-		}
+		logger.Info("VatesMachine reconciled", "name", vatesMachine.Name, "providerID", *vatesMachine.Status.ProviderID)
 	}
-
-	logger.Info("VatesMachine reconciled", "name", vatesMachine.Name, "providerID", *vatesMachine.Status.ProviderID)
 	return ctrl.Result{}, nil
 }
 
@@ -197,13 +225,8 @@ func (r *VatesMachineReconciler) reconcileExistingVM(ctx context.Context, vatesM
 	}
 
 	if vatesMachine.Status.ProviderID != nil && *vatesMachine.Status.ProviderID != "" {
-		if err := r.patchNodeProviderID(ctx, vatesMachine); err != nil {
-			logger.Error(err, "Failed to patch Node providerID (will retry)")
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-		}
+		logger.Info("VatesMachine reconciled (fast path)", "name", vatesMachine.Name, "providerID", *vatesMachine.Status.ProviderID)
 	}
-
-	logger.Info("VatesMachine reconciled (fast path)", "name", vatesMachine.Name, "providerID", *vatesMachine.Status.ProviderID)
 	return ctrl.Result{}, nil
 }
 
@@ -244,8 +267,13 @@ func (r *VatesMachineReconciler) reconcileDelete(ctx context.Context, vatesMachi
 			}
 		}
 
-		if _, err := xoClient.Client.VM().Start(ctx, vmID, nil); err == nil {
-			_, _ = xoClient.Client.VM().CleanShutdown(ctx, vmID)
+		taskID, err := xoClient.Client.VM().HardShutdown(ctx, vmID)
+		if err != nil {
+			logger.Info("HardShutdown failed or VM already stopped", "id", vmID.String(), "error", err)
+		} else if task, waitErr := xoClient.Client.Task().Wait(ctx, taskID); waitErr != nil {
+			logger.Error(waitErr, "Failed to wait for HardShutdown task", "id", vmID.String(), "task", taskID)
+		} else if task.Status != payloads.Success {
+			logger.Info("HardShutdown task did not succeed", "id", vmID.String(), "task", taskID, "status", task.Status)
 		}
 
 		if err := xoClient.Client.VM().Delete(ctx, vmID); err != nil {

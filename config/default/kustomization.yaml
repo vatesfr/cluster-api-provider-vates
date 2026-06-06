@@ -35,6 +35,14 @@ patches:
 - path: manager_metrics_patch.yaml
   target:
     kind: Deployment
+# Fix the KCP binding subject namespace (kustomize overrides it with capi-system).
+- target:
+    kind: ClusterRoleBinding
+    name: kcp
+  patch: |-
+    - op: replace
+      path: /subjects/0/namespace
+      value: capi-kubeadm-control-plane-system
 
 # Uncomment the patches line if you enable Metrics and CertManager
 # [METRICS-WITH-CERTS] To enable metrics protected with certManager, uncomment the following line.

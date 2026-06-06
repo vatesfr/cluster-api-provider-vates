@@ -30,7 +30,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"git.vates.tech/patrice.ferlet/vates-capi/test/utils"
+	"github.com/vatesfr/cluster-api-provider-vates/test/utils"
 )
 
 // namespace where the project is deployed in

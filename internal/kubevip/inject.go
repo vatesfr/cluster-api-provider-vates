@@ -13,11 +13,11 @@ const (
 
 	kubeVIPImage     = "ghcr.io/kube-vip/kube-vip:v1.1.2"
 	kubeVIPInterface = "eth0"
-	kubeVIPSubnet    = "16"
 )
 
 type Config struct {
-	VIP string
+	VIP    string
+	Subnet *int32
 }
 
 func preScript() string {
@@ -29,17 +29,25 @@ ctr image pull %s
 }
 
 func postScript(cfg Config) string {
+	vipSubnetFlag := ""
+	if cfg.Subnet != nil {
+		vipSubnetFlag = fmt.Sprintf(" --vipSubnet %d", *cfg.Subnet)
+	}
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 until curl -sk https://127.0.0.1:6443/healthz > /dev/null 2>&1; do sleep 2; done
-cp /etc/kubernetes/admin.conf /etc/kubernetes/kube-vip.conf
+if [ -f /etc/kubernetes/super-admin.conf ]; then
+  cp /etc/kubernetes/super-admin.conf /etc/kubernetes/kube-vip.conf
+else
+  cp /etc/kubernetes/admin.conf /etc/kubernetes/kube-vip.conf
+fi
 sed -i 's|https://[^:]*:6443|https://127.0.0.1:6443|g' /etc/kubernetes/kube-vip.conf
 ctr run --rm --net-host %s gen /kube-vip manifest pod \
-  --interface %s --address %s --controlplane --services --arp --leaderElection --vipSubnet %s \
+  --interface %s --address %s --controlplane --services --arp --leaderElection%s \
   > /etc/kubernetes/manifests/kube-vip.yaml
 sed -i 's|admin\.conf|kube-vip.conf|g' /etc/kubernetes/manifests/kube-vip.yaml
 sed -i 's|mountPath: /etc/kubernetes/kube-vip.conf|mountPath: /.kube/config|g' /etc/kubernetes/manifests/kube-vip.yaml
-`, kubeVIPImage, kubeVIPInterface, cfg.VIP, kubeVIPSubnet)
+`, kubeVIPImage, kubeVIPInterface, cfg.VIP, vipSubnetFlag)
 }
 
 func Inject(cloudConfig string, cfg Config) (string, error) {

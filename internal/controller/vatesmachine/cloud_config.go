@@ -15,8 +15,8 @@ import (
 
 	xok8scommon "github.com/vatesfr/xenorchestra-k8s-common"
 
-	infrastructurev1beta2 "git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2"
-	"git.vates.tech/patrice.ferlet/vates-capi/internal/kubevip"
+	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
+	"github.com/vatesfr/cluster-api-provider-vates/internal/kubevip"
 )
 
 // BuildCloudConfig retrieves SSH keys from the XO user profile and merges
@@ -98,9 +98,10 @@ func MergeSSHKeysIntoCloudConfig(cloudConfig string, sshKeys []string) (string, 
 	return "#cloud-config\n" + string(out), nil
 }
 
-// MaybeInjectKubeVIP injects kube-vip scripts into the cloud-init if this
-// machine is a control plane node and kube-vip is enabled on the VatesCluster.
-func MaybeInjectKubeVIP(ctx context.Context, c client.Client, vatesMachine *infrastructurev1beta2.VatesMachine, machine *clusterv1.Machine, cloudConfig string) (string, error) {
+// InjectKubeVIP injects kube-vip scripts into the cloud-init for a control plane
+// node. The caller is responsible for checking that kube-vip is enabled on the
+// VatesCluster before calling this function.
+func InjectKubeVIP(ctx context.Context, c client.Client, vatesMachine *infrastructurev1beta2.VatesMachine, machine *clusterv1.Machine, vatesCluster *infrastructurev1beta2.VatesCluster, cloudConfig string) (string, error) {
 	logger := log.FromContext(ctx)
 
 	if machine == nil {
@@ -112,28 +113,15 @@ func MaybeInjectKubeVIP(ctx context.Context, c client.Client, vatesMachine *infr
 		return cloudConfig, nil
 	}
 
-	vatesCluster, err := getVatesClusterForMachine(ctx, c, vatesMachine)
-	if err != nil {
-		logger.Error(err, "Failed to get VatesCluster for kube-vip injection")
-		return cloudConfig, nil
-	}
-	if vatesCluster == nil {
-		return cloudConfig, nil
-	}
-
-	if vatesCluster.Spec.KubeVIP == nil || !vatesCluster.Spec.KubeVIP.Enabled {
-		return cloudConfig, nil
-	}
-
 	if vatesCluster.Spec.ControlPlaneEndpoint == nil || vatesCluster.Spec.ControlPlaneEndpoint.Host == "" {
 		logger.Info("Kube-vip enabled but no control plane endpoint set, skipping injection")
 		return cloudConfig, nil
 	}
 
-	vip := vatesCluster.Spec.ControlPlaneEndpoint.Host
-	logger.Info("Injecting kube-vip scripts into cloud-init", "vip", vip)
+	endpoint := vatesCluster.Spec.ControlPlaneEndpoint
+	logger.Info("Injecting kube-vip scripts into cloud-init", "vip", endpoint.Host, "subnet", endpoint.Subnet)
 
-	result, err := kubevip.Inject(cloudConfig, kubevip.Config{VIP: vip})
+	result, err := kubevip.Inject(cloudConfig, kubevip.Config{VIP: endpoint.Host, Subnet: endpoint.Subnet})
 	if err != nil {
 		logger.Error(err, "Failed to inject kube-vip scripts into cloud-init")
 		return cloudConfig, UpdateCondition(ctx, c, vatesMachine, metav1.ConditionFalse, "KubeVIPInjectionFailed", err.Error())
@@ -142,18 +130,40 @@ func MaybeInjectKubeVIP(ctx context.Context, c client.Client, vatesMachine *infr
 	return result, nil
 }
 
-func getVatesClusterForMachine(ctx context.Context, c client.Client, vatesMachine *infrastructurev1beta2.VatesMachine) (*infrastructurev1beta2.VatesCluster, error) {
-	machine, err := GetOwnerMachine(ctx, c, vatesMachine)
-	if err != nil || machine == nil {
-		return nil, err
+// InjectPoolID adds the Xen Orchestra pool ID as a file in the cloud-config.
+// The pool ID is used by the VM (in postKubeadmCommands) to construct the
+// providerID together with the local VM UUID.
+func InjectPoolID(cloudConfig string, poolID string) (string, error) {
+	if cloudConfig == "" || poolID == "" {
+		return cloudConfig, nil
 	}
 
-	clusterName := machine.Labels["cluster.x-k8s.io/cluster-name"]
-	if clusterName == "" {
-		return nil, nil
+	var config map[string]any
+	if err := yaml.Unmarshal([]byte(cloudConfig), &config); err != nil {
+		return "", fmt.Errorf("failed to parse cloud-config: %w", err)
+	}
+	if config == nil {
+		config = make(map[string]any)
 	}
 
-	return GetVatesCluster(ctx, c, vatesMachine.Namespace, clusterName)
+	writeFiles, ok := config["write_files"].([]any)
+	if !ok {
+		writeFiles = nil
+	}
+
+	writeFiles = append(writeFiles, map[string]any{
+		"path":        "/etc/vates/pool-id",
+		"permissions": "0644",
+		"content":     poolID + "\n",
+	})
+	config["write_files"] = writeFiles
+
+	out, err := yaml.Marshal(config)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal cloud-config: %w", err)
+	}
+
+	return "#cloud-config\n" + string(out), nil
 }
 
 // GetVatesCluster retrieves a VatesCluster by namespace and cluster name.
@@ -163,7 +173,7 @@ func GetVatesCluster(ctx context.Context, c client.Client, namespace, clusterNam
 		return nil, err
 	}
 
-	if cluster.Spec.InfrastructureRef.Kind != "VatesCluster" {
+	if cluster.Spec.InfrastructureRef.Kind != "VatesCluster" || cluster.Spec.InfrastructureRef.Name == "" {
 		return nil, nil
 	}
 
@@ -178,21 +188,29 @@ func GetVatesCluster(ctx context.Context, c client.Client, namespace, clusterNam
 	return vatesCluster, nil
 }
 
-// GetOwnerMachine returns the CAPI Machine that references this VatesMachine.
+// GetOwnerMachine returns the CAPI Machine that references this VatesMachine
+// via OwnerReferences, avoiding a namespace-wide list.
 func GetOwnerMachine(ctx context.Context, c client.Client, vatesMachine *infrastructurev1beta2.VatesMachine) (*clusterv1.Machine, error) {
-	machineList := &clusterv1.MachineList{}
-	if err := c.List(ctx, machineList, client.InNamespace(vatesMachine.Namespace)); err != nil {
-		return nil, err
+	ownerRef := metav1.GetControllerOf(vatesMachine)
+	if ownerRef == nil {
+		return nil, nil
 	}
 
-	for i := range machineList.Items {
-		m := &machineList.Items[i]
-		if m.Spec.InfrastructureRef.Kind == infrastructurev1beta2.KindVatesMachine && m.Spec.InfrastructureRef.Name == vatesMachine.Name {
-			return m, nil
+	machine := &clusterv1.Machine{}
+	if err := c.Get(ctx, types.NamespacedName{
+		Namespace: vatesMachine.Namespace,
+		Name:      ownerRef.Name,
+	}, machine); err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			return nil, err
 		}
+		return nil, nil
 	}
 
-	return nil, nil
+	if machine.UID != ownerRef.UID {
+		return nil, nil
+	}
+	return machine, nil
 }
 
 // GetBootstrapData reads the bootstrap data secret referenced by the Machine.

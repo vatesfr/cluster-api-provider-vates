@@ -13,7 +13,7 @@ import (
 	xok8scommon "github.com/vatesfr/xenorchestra-k8s-common"
 	k8smocks "github.com/vatesfr/xenorchestra-k8s-common/mocks"
 
-	infrastructurev1beta2 "git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2"
+	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 )
 
 var _ = Describe("ManageVIFs", func() {

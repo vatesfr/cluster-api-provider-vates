@@ -97,10 +97,9 @@ type ResourceSet struct {
 	// +optional
 	Memory string `json:"memory,omitempty"`
 
-	// DiskGB is the disk size in GB.
+	// DiskSize is the disk size allocated to the VM in Kubernetes resource format (e.g. "30Gi", "50G").
 	// +optional
-	// +kubebuilder:validation:Minimum=10
-	DiskGB *int64 `json:"diskGB,omitempty"`
+	DiskSize string `json:"diskSize,omitempty"`
 }
 
 // VatesMachineStatus defines the observed state of VatesMachine.

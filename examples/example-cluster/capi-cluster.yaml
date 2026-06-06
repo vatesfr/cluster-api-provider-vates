@@ -13,22 +13,22 @@ spec:
     serviceDomain: cluster.local
   topology:
     classRef:
-      name: vates-rhel-from-scratch
+      name: vates-rhel-prefilled
     version: v1.36.0
     variables:
       - name: controlPlaneEndpoint
         value:
           host: "10.30.139.10"
           port: 6443
+          subnet: 16
       - name: vmNamePrefix
-        value: "PFT-cluster1"
-      - name: use-kubevip
-        value:
-          enabled: true
+        value: "PFT-"
+      - name: controlPlaneLB
+        value: "kube-vip"
     controlPlane:
       replicas: 3
     workers:
       machineDeployments:
-        - class: worker-from-scratch
+        - class: worker-prefilled
           name: worker-md-0
-          replicas: 5
+          replicas: 2

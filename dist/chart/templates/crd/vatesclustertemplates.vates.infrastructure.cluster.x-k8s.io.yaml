@@ -70,23 +70,26 @@ spec:
                             maximum: 65535
                             minimum: 1
                             type: integer
+                          subnet:
+                            description: |-
+                              Subnet is the CIDR subnet mask used by the control plane load balancer.
+                              If not set, the load balancer implementation will auto-detect.
+                            format: int32
+                            maximum: 32
+                            minimum: 1
+                            type: integer
                         required:
                         - host
                         - port
                         type: object
-                      kubevip:
+                      controlPlaneLB:
                         description: |-
-                          KubeVIP configures the kube-vip static pod for control plane VIP management.
-                          When enabled, the controller injects kube-vip setup scripts into the
-                          cloud-init data of control plane machines.
-                        properties:
-                          enabled:
-                            description: Enabled enables kube-vip static pod on control
-                              plane nodes.
-                            type: boolean
-                        required:
-                        - enabled
-                        type: object
+                          ControlPlaneLB selects the control plane load balancer implementation.
+                          Supported values: "kube-vip". When set, the controller injects setup
+                          scripts into the cloud-init data of control plane machines.
+                        enum:
+                        - kube-vip
+                        type: string
                     type: object
                 required:
                 - spec

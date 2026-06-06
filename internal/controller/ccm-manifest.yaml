@@ -1,0 +1,132 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: xenorchestra-cloud-controller-manager
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:xenorchestra-cloud-controller-manager
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, create, update]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch, update]
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list, watch, update, patch, delete]
+  - apiGroups: [""]
+    resources: [nodes/status]
+    verbs: [patch]
+  - apiGroups: [""]
+    resources: [serviceaccounts]
+    verbs: [get, create]
+  - apiGroups: [""]
+    resources: [serviceaccounts/token]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system:xenorchestra-cloud-controller-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:xenorchestra-cloud-controller-manager
+subjects:
+  - kind: ServiceAccount
+    name: xenorchestra-cloud-controller-manager
+    namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: system:xenorchestra-cloud-controller-manager:extension-apiserver-authentication-reader
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - kind: ServiceAccount
+    name: xenorchestra-cloud-controller-manager
+    namespace: kube-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xenorchestra-cloud-controller-manager
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: xenorchestra-cloud-controller-manager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: xenorchestra-cloud-controller-manager
+    spec:
+      serviceAccountName: xenorchestra-cloud-controller-manager
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 10.30.0.1
+        searches:
+          - default.svc.cluster.local
+          - svc.cluster.local
+          - cluster.local
+      priorityClassName: system-cluster-critical
+      containers:
+        - name: xenorchestra-cloud-controller-manager
+          image: ghcr.io/vatesfr/xenorchestra-cloud-controller-manager:v1.0.0
+          args:
+            - --v=2
+            - --cloud-provider=xenorchestra
+            - --cloud-config=/etc/xenorchestra/config.yaml
+            - --controllers=cloud-node,cloud-node-lifecycle,cloud-node-label-sync
+            - --leader-elect-resource-name=cloud-controller-manager-xenorchestra
+            - --use-service-account-credentials
+            - --secure-port=10258
+            - --leader-elect=false
+          volumeMounts:
+            - name: cloud-config
+              mountPath: /etc/xenorchestra
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+      tolerations:
+        - effect: NoSchedule
+          key: node-role.kubernetes.io/control-plane
+          operator: Exists
+        - effect: NoSchedule
+          key: node.cloudprovider.kubernetes.io/uninitialized
+          operator: Exists
+        - effect: NoSchedule
+          key: node.cilium.io/agent-not-ready
+          operator: Exists
+        - effect: NoExecute
+          operator: Exists
+      volumes:
+        - name: cloud-config
+          secret:
+            secretName: xenorchestra-cloud-controller-manager
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: xenorchestra-cloud-controller-manager
+  namespace: kube-system
+stringData:
+  config.yaml: |
+    url: {{.XOAURL}}
+    token: {{.XOAToken}}
+    insecure: {{.XOAInsecure}}

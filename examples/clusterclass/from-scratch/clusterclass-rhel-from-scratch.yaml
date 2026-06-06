@@ -1,0 +1,178 @@
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: ClusterClass
+metadata:
+  name: vates-rhel-from-scratch
+spec:
+  variables:
+    - name: controlPlaneEndpoint
+      required: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            host:
+              type: string
+            port:
+              type: integer
+              default: 6443
+            subnet:
+              type: integer
+              minimum: 1
+              maximum: 32
+          required:
+            - host
+    - name: vmNamePrefix
+      required: true
+      schema:
+        openAPIV3Schema:
+          type: string
+    - name: controlPlaneLB
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          enum:
+            - kube-vip
+  patches:
+    - name: controlPlaneEndpointPatch
+      definitions:
+        - selector:
+            apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+            kind: VatesClusterTemplate
+            matchResources:
+              infrastructureCluster: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/controlPlaneEndpoint
+              valueFrom:
+                variable: controlPlaneEndpoint
+    - name: cpNamePrefixPatch
+      definitions:
+        - selector:
+            apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+            kind: VatesMachineTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: replace
+              path: /spec/template/spec/namePrefix
+              valueFrom:
+                template: '{{ .vmNamePrefix }}-cp'
+    - name: workerNamePrefixPatch
+      definitions:
+        - selector:
+            apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+            kind: VatesMachineTemplate
+            matchResources:
+              machineDeploymentClass:
+                names:
+                  - worker-from-scratch
+          jsonPatches:
+            - op: replace
+              path: /spec/template/spec/namePrefix
+              valueFrom:
+                template: '{{ .vmNamePrefix }}-worker'
+    - name: workerArpingPatch
+      definitions:
+        - selector:
+            apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+            kind: KubeadmConfigTemplate
+            matchResources:
+              machineDeploymentClass:
+                names:
+                  - worker-from-scratch
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/preKubeadmCommands/-
+              valueFrom:
+                template: arping -I eth0 -c 3 {{ .controlPlaneEndpoint.host }} 2>/dev/null || true
+    - name: kubevipPatch
+      definitions:
+        - selector:
+            apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+            kind: KubeadmControlPlaneTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/kubeadmConfigSpec/clusterConfiguration/apiServer/certSANs/-
+              valueFrom:
+                variable: controlPlaneEndpoint.host
+        - selector:
+            apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+            kind: VatesClusterTemplate
+            matchResources:
+              infrastructureCluster: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/controlPlaneLB
+              valueFrom:
+                variable: controlPlaneLB
+    - name: ciliumPatch
+      definitions:
+        - selector:
+            apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+            kind: KubeadmControlPlaneTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/kubeadmConfigSpec/postKubeadmCommands/-
+              valueFrom:
+                template: >
+                  cp /etc/kubernetes/super-admin.conf /tmp/kubeconfig-local.conf
+                  && sed -i 's|https://[0-9.]*:6443|https://127.0.0.1:6443|' /tmp/kubeconfig-local.conf
+                  && export KUBECONFIG=/tmp/kubeconfig-local.conf
+                  && (command -v cilium >/dev/null 2>&1
+                  || (curl -sL --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz{,.sha256sum}
+                  && sha256sum --check cilium-linux-amd64.tar.gz.sha256sum
+                  && tar xzf cilium-linux-amd64.tar.gz -C /usr/local/bin
+                  && rm cilium-linux-amd64.tar.gz{,.sha256sum})
+                  )
+                  && cilium install --version 1.16.6
+                  --set ipam.mode=kubernetes
+                  --set devices=eth0
+                  --set kubeProxyReplacement=false
+                  --set clustermesh.useAPIServer=false
+                  --set hubble.enabled=false
+                  && cilium status --wait --wait-duration=120s
+  infrastructure:
+    templateRef:
+      apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+      kind: VatesClusterTemplate
+      name: rhel-cluster
+  controlPlane:
+    templateRef:
+      apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+      kind: KubeadmControlPlaneTemplate
+      name: rhel-from-scratch-control-plane
+    machineInfrastructure:
+      templateRef:
+        apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+        kind: VatesMachineTemplate
+        name: rhel-cp-from-scratch
+  workers:
+    machineDeployments:
+      - class: worker-from-scratch
+        healthCheck:
+          checks:
+            nodeStartupTimeoutSeconds: 600
+            unhealthyNodeConditions:
+              - type: Ready
+                status: "False"
+                timeoutSeconds: 300
+              - type: Ready
+                status: Unknown
+                timeoutSeconds: 300
+          remediation:
+            maxInFlight: 1
+        bootstrap:
+          templateRef:
+            apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+            kind: KubeadmConfigTemplate
+            name: rhel-from-scratch-worker
+        infrastructure:
+          templateRef:
+            apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+            kind: VatesMachineTemplate
+            name: rhel-worker-from-scratch

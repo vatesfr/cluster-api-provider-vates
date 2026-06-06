@@ -2,26 +2,21 @@ package controller
 
 import (
 	"context"
-	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
-	infrastructurev1beta2 "git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2"
-	vatesmachine "git.vates.tech/patrice.ferlet/vates-capi/internal/controller/vatesmachine"
+	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 	xok8scommon "github.com/vatesfr/xenorchestra-k8s-common"
 )
 
@@ -78,6 +73,7 @@ func (r *VatesMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.secretToVatesMachine),
 		).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 5}).
 		Named("vatesmachine").
 		Complete(r)
 }
@@ -128,88 +124,5 @@ func (r *VatesMachineReconciler) secretToVatesMachine(ctx context.Context, o cli
 			}
 		}
 	}
-	return nil
-}
-
-// patchNodeProviderID reads the workload cluster kubeconfig and patches the Node
-// with the Xen Orchestra VM providerID.
-func (r *VatesMachineReconciler) patchNodeProviderID(ctx context.Context, vatesMachine *infrastructurev1beta2.VatesMachine) error {
-	logger := log.FromContext(ctx)
-	machine, err := vatesmachine.GetOwnerMachine(ctx, r.Client, vatesMachine)
-	if err != nil {
-		return fmt.Errorf("get owner machine: %w", err)
-	}
-	if machine == nil {
-		return nil
-	}
-
-	clusterName := machine.Labels["cluster.x-k8s.io/cluster-name"]
-	if clusterName == "" {
-		return nil
-	}
-
-	secretName := fmt.Sprintf("%s-kubeconfig", clusterName)
-	secret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Namespace: vatesMachine.Namespace, Name: secretName}, secret); err != nil {
-		if apierrors.IsNotFound(err) {
-			return fmt.Errorf("kubeconfig secret %s not found (cluster not ready yet)", secretName)
-		}
-		return fmt.Errorf("get kubeconfig secret: %w", err)
-	}
-
-	kubeconfigData, ok := secret.Data["value"]
-	if !ok {
-		return fmt.Errorf("kubeconfig secret has no 'value' key")
-	}
-
-	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigData)
-	if err != nil {
-		return fmt.Errorf("parse kubeconfig: %w", err)
-	}
-
-	clientset, err := kubernetes.NewForConfig(restConfig)
-	if err != nil {
-		return fmt.Errorf("create kubernetes client: %w", err)
-	}
-
-	nodes, err := clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("list workload nodes: %w", err)
-	}
-
-	for i := range nodes.Items {
-		if nodes.Items[i].Spec.ProviderID == *vatesMachine.Status.ProviderID {
-			logger.V(1).Info("Node already has correct providerID", "node", nodes.Items[i].Name)
-			return nil
-		}
-	}
-
-	var targetNode *corev1.Node
-	for i := range nodes.Items {
-		if nodes.Items[i].Spec.ProviderID == "" {
-			targetNode = &nodes.Items[i]
-			break
-		}
-	}
-
-	if targetNode == nil && machine.Status.NodeRef.Name != "" {
-		for i := range nodes.Items {
-			if nodes.Items[i].Name == machine.Status.NodeRef.Name {
-				targetNode = &nodes.Items[i]
-				break
-			}
-		}
-	}
-
-	if targetNode == nil {
-		return fmt.Errorf("no node found to patch (nodes may not have registered yet)")
-	}
-
-	patchData := fmt.Sprintf(`{"spec":{"providerID":"%s"}}`, *vatesMachine.Status.ProviderID)
-	if _, err := clientset.CoreV1().Nodes().Patch(ctx, targetNode.Name, types.StrategicMergePatchType, []byte(patchData), metav1.PatchOptions{}); err != nil {
-		return fmt.Errorf("patch node %s: %w", targetNode.Name, err)
-	}
-
-	logger.Info("Patched Node with providerID", "node", targetNode.Name, "providerID", *vatesMachine.Status.ProviderID)
 	return nil
 }

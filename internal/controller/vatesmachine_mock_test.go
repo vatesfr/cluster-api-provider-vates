@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	"github.com/gofrs/uuid"
 	"go.uber.org/mock/gomock"
@@ -18,9 +19,9 @@ import (
 	k8smocks "github.com/vatesfr/xenorchestra-k8s-common/mocks"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
-	infrastructurev1beta2 "git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 )
 
 // ---------------------------------------------------------------------------
@@ -187,6 +188,68 @@ var _ = Describe("Reconcile", func() {
 			Expect(updated.Status.Addresses[0].Address).To(Equal("192.168.1.42"))
 		})
 
+		It("sets the disk size when DiskSize is set", func() {
+			vmUUID := uuid.Must(uuid.NewV4())
+			poolUUID := uuid.Must(uuid.NewV4())
+			templateUUID := uuid.Must(uuid.NewV4())
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&infrastructurev1beta2.VatesMachine{}).WithObjects(
+				&infrastructurev1beta2.VatesMachine{
+					ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+					Spec: infrastructurev1beta2.VatesMachineSpec{
+						TemplateID:    templateUUID.String(),
+						PoolID:        poolUUID.String(),
+						NamePrefix:    "test",
+						BootstrapData: "#cloud-config\n",
+						ResourceSet: &infrastructurev1beta2.ResourceSet{
+							DiskSize: "50Gi",
+						},
+					},
+				},
+			).Build()
+
+			r = &VatesMachineReconciler{
+				Client:   fakeClient,
+				Scheme:   scheme,
+				xoClient: &xok8scommon.XoClient{Client: mockLib},
+			}
+
+			mockV1.EXPECT().
+				GetCurrentUser().
+				Return(&xoclient.User{Preferences: xoclient.Preferences{}}, nil).
+				AnyTimes()
+
+			mockVM.EXPECT().
+				Create(gomock.Any(), poolUUID, gomock.Any()).
+				Return(&payloads.VM{
+					ID:         vmUUID,
+					NameLabel:  "test",
+					PowerState: payloads.PowerStateRunning,
+				}, nil)
+
+			mockVM.EXPECT().
+				GetByID(gomock.Any(), vmUUID).
+				Return(&payloads.VM{
+					ID:            vmUUID,
+					NameLabel:     "test",
+					PowerState:    payloads.PowerStateRunning,
+					MainIpAddress: "192.168.1.42",
+				}, nil)
+
+			result, err := r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+
+			updated := &infrastructurev1beta2.VatesMachine{}
+			err = r.Get(ctx, types.NamespacedName{Name: "test", Namespace: "default"}, updated)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.Status.Ready).To(BeTrue())
+			Expect(updated.Status.ProviderID).NotTo(BeNil())
+			Expect(*updated.Status.ProviderID).NotTo(BeEmpty())
+		})
+
 		It("requeues when the VM started but has no IP yet", func() {
 			vmUUID := uuid.Must(uuid.NewV4())
 			poolUUID := uuid.Must(uuid.NewV4())
@@ -241,7 +304,9 @@ var _ = Describe("Reconcile", func() {
 					MainIpAddress: "",
 				}, nil)
 
-			result, err := r.Reconcile(ctx, reconcile.Request{
+			timeoutCtx, timeoutCancel := context.WithTimeout(ctx, time.Second)
+			defer timeoutCancel()
+			result, err := r.Reconcile(timeoutCtx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: "test", Namespace: "default"},
 			})
 			Expect(err).NotTo(HaveOccurred())
@@ -284,12 +349,12 @@ var _ = Describe("Reconcile", func() {
 			}
 
 			mockVM.EXPECT().
-				Start(gomock.Any(), vmUUID, nil).
-				Return("", nil)
+				HardShutdown(gomock.Any(), vmUUID).
+				Return("task-123", nil)
 
-			mockVM.EXPECT().
-				CleanShutdown(gomock.Any(), vmUUID).
-				Return("", nil)
+			mockTask.EXPECT().
+				Wait(gomock.Any(), "task-123").
+				Return(&payloads.Task{Status: payloads.Success}, nil)
 
 			mockVM.EXPECT().
 				Delete(gomock.Any(), vmUUID).

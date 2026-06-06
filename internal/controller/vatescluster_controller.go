@@ -1,24 +1,31 @@
 package controller
 
 import (
+	"bytes"
 	"context"
+	_ "embed"
 	"fmt"
+	"text/template"
 	"time"
+
+	"k8s.io/apimachinery/pkg/runtime"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+
+	addonsv1 "sigs.k8s.io/cluster-api/api/addons/v1beta2" // ClusterResourceSet
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	infrastructurev1beta2 "git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2"
+	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 	xok8scommon "github.com/vatesfr/xenorchestra-k8s-common"
 )
 
@@ -42,6 +49,9 @@ var _ reconcile.Reconciler = (*VatesClusterReconciler)(nil)
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters;clusters/status,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=machines;machines/status,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=addons.cluster.x-k8s.io,resources=clusterresourcesets,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 func (r *VatesClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	vatesCluster := &infrastructurev1beta2.VatesCluster{}
@@ -62,11 +72,14 @@ func (r *VatesClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 func (r *VatesClusterReconciler) reconcileNormal(ctx context.Context, vatesCluster *infrastructurev1beta2.VatesCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	controllerutil.AddFinalizer(vatesCluster, vatesClusterFinalizer)
-	if err := r.Update(ctx, vatesCluster); err != nil {
-		logger.Error(err, "Failed to add finalizer")
-		return ctrl.Result{}, err
+	if controllerutil.AddFinalizer(vatesCluster, vatesClusterFinalizer) {
+		if err := r.Update(ctx, vatesCluster); err != nil {
+			logger.Error(err, "Failed to add finalizer")
+			return ctrl.Result{}, err
+		}
 	}
+
+	patchBase := vatesCluster.DeepCopy()
 
 	cluster, err := r.getOwnerCluster(ctx, vatesCluster)
 	if err != nil {
@@ -106,12 +119,15 @@ func (r *VatesClusterReconciler) reconcileNormal(ctx context.Context, vatesClust
 		}
 	}
 
-	// Mark infrastructure ready so CAPI can proceed with machine creation
-	vatesCluster.Status.Ready = true
-	vatesCluster.Status.Initialization = &infrastructurev1beta2.InitializationStatus{Provisioned: true}
-	r.setCondition(vatesCluster, "Ready", metav1.ConditionTrue, "ClusterInfrastructureReady", "Cluster infrastructure is ready")
+	if !needsRequeue {
+		vatesCluster.Status.Ready = true
+		vatesCluster.Status.Initialization = &infrastructurev1beta2.InitializationStatus{Provisioned: true}
+		r.setCondition(vatesCluster, "Ready", metav1.ConditionTrue, "ClusterInfrastructureReady", "Cluster infrastructure is ready")
+	} else {
+		r.setCondition(vatesCluster, "Ready", metav1.ConditionFalse, "WaitingForControlPlaneEndpoint", "Waiting for a ready control plane machine to discover the endpoint")
+	}
 
-	if err := r.Status().Update(ctx, vatesCluster); err != nil {
+	if err := r.Status().Patch(ctx, vatesCluster, client.MergeFrom(patchBase)); err != nil {
 		logger.Error(err, "Failed to update VatesCluster status")
 		return ctrl.Result{}, err
 	}
@@ -129,6 +145,15 @@ func (r *VatesClusterReconciler) reconcileNormal(ctx context.Context, vatesClust
 	if needsRequeue {
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
+
+	// Ensure CCM ConfigMap + CRS exist for automatic CCM deployment into
+	// workload clusters. This uses the same xo-credentials secret as the
+	// management controller — no extra configuration needed.
+	if err := r.reconcileCCM(ctx); err != nil {
+		logger.Error(err, "Failed to reconcile CCM resources, will retry")
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -136,7 +161,7 @@ func (r *VatesClusterReconciler) reconcileDelete(ctx context.Context, vatesClust
 	logger := log.FromContext(ctx)
 
 	if controllerutil.ContainsFinalizer(vatesCluster, vatesClusterFinalizer) {
-		logger.Info("Cleaning up VatesCluster", "name", vatesCluster.Name)
+		logger.Info("Removing finalizer from VatesCluster", "name", vatesCluster.Name)
 
 		controllerutil.RemoveFinalizer(vatesCluster, vatesClusterFinalizer)
 		if err := r.Update(ctx, vatesCluster); err != nil {
@@ -148,20 +173,26 @@ func (r *VatesClusterReconciler) reconcileDelete(ctx context.Context, vatesClust
 }
 
 func (r *VatesClusterReconciler) getOwnerCluster(ctx context.Context, vatesCluster *infrastructurev1beta2.VatesCluster) (*clusterv1.Cluster, error) {
-	clusterList := &clusterv1.ClusterList{}
-	if err := r.List(ctx, clusterList, client.InNamespace(vatesCluster.Namespace)); err != nil {
+	ownerRef := metav1.GetControllerOf(vatesCluster)
+	if ownerRef == nil {
+		return nil, nil
+	}
+
+	cluster := &clusterv1.Cluster{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: vatesCluster.Namespace,
+		Name:      ownerRef.Name,
+	}, cluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
-	for i := range clusterList.Items {
-		c := &clusterList.Items[i]
-		if c.Spec.InfrastructureRef.Kind == "VatesCluster" &&
-			c.Spec.InfrastructureRef.Name == vatesCluster.Name {
-			return c, nil
-		}
+	if cluster.UID != ownerRef.UID {
+		return nil, nil
 	}
-
-	return nil, nil
+	return cluster, nil
 }
 
 func (r *VatesClusterReconciler) discoverControlPlaneEndpoint(ctx context.Context, cluster *clusterv1.Cluster) (*infrastructurev1beta2.APIEndpoint, error) {
@@ -210,19 +241,157 @@ func (r *VatesClusterReconciler) discoverControlPlaneEndpoint(ctx context.Contex
 func (r *VatesClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&infrastructurev1beta2.VatesCluster{}).
+		Watches(
+			&clusterv1.Cluster{},
+			handler.EnqueueRequestsFromMapFunc(r.clusterToVatesCluster),
+		).
+		Watches(
+			&clusterv1.Machine{},
+			handler.EnqueueRequestsFromMapFunc(r.machineToVatesCluster),
+		).
 		Named("vatescluster").
 		Complete(r)
 }
 
+// clusterToVatesCluster maps a Cluster change to the corresponding VatesCluster.
+func (r *VatesClusterReconciler) clusterToVatesCluster(_ context.Context, o client.Object) []reconcile.Request {
+	cluster, ok := o.(*clusterv1.Cluster)
+	if !ok {
+		return nil
+	}
+	if cluster.Spec.InfrastructureRef.Kind != "VatesCluster" {
+		return nil
+	}
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{
+			Namespace: cluster.Namespace,
+			Name:      cluster.Spec.InfrastructureRef.Name,
+		},
+	}}
+}
+
+// machineToVatesCluster maps a control plane Machine change to the corresponding
+// VatesCluster, so that endpoint discovery is re-triggered when a machine becomes Ready.
+func (r *VatesClusterReconciler) machineToVatesCluster(ctx context.Context, o client.Object) []reconcile.Request {
+	machine, ok := o.(*clusterv1.Machine)
+	if !ok {
+		return nil
+	}
+	if _, ok := machine.Labels[clusterv1.MachineControlPlaneLabel]; !ok {
+		return nil
+	}
+	clusterName, ok := machine.Labels[clusterv1.ClusterNameLabel]
+	if !ok {
+		return nil
+	}
+	cluster := &clusterv1.Cluster{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: machine.Namespace, Name: clusterName}, cluster); err != nil {
+		return nil
+	}
+	if cluster.Spec.InfrastructureRef.Kind != "VatesCluster" {
+		return nil
+	}
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{
+			Namespace: cluster.Namespace,
+			Name:      cluster.Spec.InfrastructureRef.Name,
+		},
+	}}
+}
+
+// ccmManifestTemplate is the CCM deployment manifest rendered with XO credentials.
+//
+//go:embed ccm-manifest.yaml
+var ccmManifestTemplate string
+
+// ccmManifestData holds the template values for the CCM manifest.
+type ccmManifestData struct {
+	XOAURL      string
+	XOAToken    string
+	XOAInsecure string
+}
+
+// reconcileCCM creates the CCM ConfigMap + ClusterResourceSet so that
+// every workload cluster gets the Xen Orchestra Cloud Controller Manager
+// automatically deployed. It reads the XO credentials from the management
+// cluster's xo-credentials secret.
+func (r *VatesClusterReconciler) reconcileCCM(ctx context.Context) error {
+	logger := log.FromContext(ctx)
+
+	secret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: "capi-system", Name: "xo-credentials"}, secret); err != nil {
+		return fmt.Errorf("get xo-credentials secret: %w", err)
+	}
+
+	data := ccmManifestData{
+		XOAURL:      string(secret.Data["url"]),
+		XOAToken:    string(secret.Data["token"]),
+		XOAInsecure: string(secret.Data["insecure"]),
+	}
+	if data.XOAInsecure == "" {
+		data.XOAInsecure = "true"
+	}
+
+	tmpl, err := template.New("ccm").Parse(ccmManifestTemplate)
+	if err != nil {
+		return fmt.Errorf("parse CCM template: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return fmt.Errorf("execute CCM template: %w", err)
+	}
+
+	// Create or update the ConfigMap
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "ccm-manifests", Namespace: "default"}}
+	op, err := ctrl.CreateOrUpdate(ctx, r.Client, cm, func() error {
+		if cm.Data == nil {
+			cm.Data = make(map[string]string)
+		}
+		cm.Data["ccm.yaml"] = buf.String()
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("create/update ConfigMap ccm-manifests: %w", err)
+	}
+	logger.Info("CCM manifests ConfigMap reconciled", "operation", op)
+
+	// Create or update the ClusterResourceSet
+	crs := &addonsv1.ClusterResourceSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "ccm-deployment", Namespace: "default"},
+	}
+	op, err = ctrl.CreateOrUpdate(ctx, r.Client, crs, func() error {
+		crs.Spec = addonsv1.ClusterResourceSetSpec{
+			ClusterSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{"topology.cluster.x-k8s.io/owned": ""},
+			},
+			Resources: []addonsv1.ResourceRef{
+				{Kind: "ConfigMap", Name: "ccm-manifests"},
+			},
+			Strategy: "ApplyOnce",
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("create/update ClusterResourceSet ccm-deployment: %w", err)
+	}
+	logger.Info("CCM ClusterResourceSet reconciled", "operation", op)
+
+	return nil
+}
+
 // setCondition updates or adds a condition in the VatesCluster's Conditions slice.
+// LastTransitionTime is only updated when the condition status changes.
 func (r *VatesClusterReconciler) setCondition(vatesCluster *infrastructurev1beta2.VatesCluster, conditionType string, status metav1.ConditionStatus, reason, message string) {
 	now := metav1.Now()
 	for i, c := range vatesCluster.Status.Conditions {
 		if c.Type == conditionType {
+			// Only update LastTransitionTime when the status actually changes
+			if c.Status != status {
+				vatesCluster.Status.Conditions[i].LastTransitionTime = now
+			}
 			vatesCluster.Status.Conditions[i].Status = status
 			vatesCluster.Status.Conditions[i].Reason = reason
 			vatesCluster.Status.Conditions[i].Message = message
-			vatesCluster.Status.Conditions[i].LastTransitionTime = now
 			return
 		}
 	}

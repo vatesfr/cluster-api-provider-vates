@@ -1,5 +1,5 @@
 CONTAINER_TOOL ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
-IMG ?= ghcr.io/vatesfr/cluster-api-provider-vates:dev
+IMG ?= ghcr.io/vatesfr/cluster-api-provider-vates:latest
 
 build:
 	$(MAKE) docker-build IMG=$(IMG)

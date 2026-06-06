@@ -11,7 +11,7 @@ import (
 	xoclient "github.com/vatesfr/xenorchestra-go-sdk/client"
 	xok8scommon "github.com/vatesfr/xenorchestra-k8s-common"
 
-	infrastructurev1beta2 "git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2"
+	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
 
@@ -70,6 +70,9 @@ func ResolveTemplateID(ctx context.Context, xoClient *xok8scommon.XoClient, temp
 	}
 	if templateName != "" {
 		v1 := xoClient.Client.V1Client()
+		if v1 == nil {
+			return uuid.Nil, fmt.Errorf("V1 client not available for template lookup")
+		}
 		templates, err := v1.GetTemplate(xoclient.Template{NameLabel: templateName})
 		if err != nil || len(templates) == 0 {
 			if err == nil {
@@ -98,6 +101,9 @@ func ResolvePoolID(ctx context.Context, xoClient *xok8scommon.XoClient, poolIDSt
 	}
 	if poolName != "" {
 		v1 := xoClient.Client.V1Client()
+		if v1 == nil {
+			return uuid.Nil, fmt.Errorf("V1 client not available for pool lookup")
+		}
 		pools, err := v1.GetPoolByName(poolName)
 		if err != nil || len(pools) == 0 {
 			if err == nil {
@@ -121,6 +127,9 @@ func ResolveNetworkID(v1Client xoclient.XOClient, netConfig infrastructurev1beta
 		return netConfig.NetworkID, nil
 	}
 	if netConfig.Name != "" {
+		if v1Client == nil {
+			return "", fmt.Errorf("V1 client not available for network lookup")
+		}
 		netReq := xoclient.Network{
 			NameLabel: netConfig.Name,
 		}

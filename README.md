@@ -6,50 +6,48 @@ on XenServer / XCP-ng pools as Kubernetes worker and control plane nodes.
 
 ## Quick start
 
-> **Prerequisites:** A management cluster, [clusterctl](https://cluster-api.sigs.k8s.io/clusterctl/overview.html), Xen Orchestra access (VM template UUID, pool UUID, network name). Edit `config/samples/machinetemplates/` with your environment values before applying.
+> **Prerequisites:** A management cluster (Kind, k3s, etc.), [clusterctl](https://cluster-api.sigs.k8s.io/clusterctl/overview.html), Xen Orchestra access (VM template UUID, pool UUID, network name).
 
 ```bash
-# Install CAPI on a management cluster
+# 1. Install CAPI with ClusterClass support
 CLUSTER_TOPOLOGY=true clusterctl init --bootstrap kubeadm --control-plane kubeadm
 
-# Build and deploy the vates provider
-kubectl apply -f dist/install.yaml
+# 2. Deploy the vates provider
+kubectl apply -f https://github.com/vatesfr/cluster-api-provider-vates/releases/latest/download/install.yaml
 
-# Create the XO credentials secret (required before creating clusters)
-kubectl create secret generic xo-credentials \
-  --namespace capi-system \
+# 3. Create the XO credentials secret
+kubectl create secret generic xo-credentials -n capi-system \
   --from-literal=url="https://<your-xoa>" \
   --from-literal=token="<your-xo-token>" \
   --from-literal=insecure="true"
 ```
 
-Then you can edit `config/samples/machinetemplates` to stick with your own environment:
+### Template requirements
 
-- `poolID`
-- `templateID` (XCP-ng machine template that can use `cloudini`, this machine can be prefiled, see the `config/samples/packers` example)
-- `network` name or ID
+All templates must have **cloud-init** support enabled and **Xen guest tools** installed and running.
 
-Afterward you can apply the clusterClasses and machines templates:
+Two ClusterClass variants are provided:
+
+- **`prefilled`** — for templates that already have kubelet, kubeadm, containerd, kube-vip, and Cilium images pre-installed. Edit `examples/machinetemplates/prefilled/`.
+- **`from-scratch`** — for minimal templates (just containerd + Xen guest tools). The ClusterClass handles installing everything via `preKubeadmCommands`. Edit `examples/machinetemplates/from-scratch/`.
+
+Edit the matching `VatesMachineTemplate` files to set your `templateID`, `poolID`, and network name, then apply:
 
 ```bash
-# Deploy ClusterClass + machine templates (edit templateID/poolID/network first)
-kubectl apply -k config/samples/clusterclass/
-kubectl apply -k config/samples/machinetemplates/
+# 4. Deploy ClusterClass + machine templates
+kubectl apply -k examples/clusterclass/
+kubectl apply -k examples/machinetemplates/prefilled/
 
-# Create a cluster (with the template from config/samples/example-cluster/)
-kubectl apply -k config/samples/example-cluster/
+# 5. Create a cluster
+kubectl apply -f examples/example-cluster/capi-cluster.yaml
 ```
 
 ## Development
 
 ```bash
-# Build and test
-make build
-make test
-
-# Local Kind development
-make -f Makefile.dev build
-make -f Makefile.dev deploy
+make -f Makefile.dev build    # Build controller image
+make -f Makefile.dev push     # Load into Kind
+make -f Makefile.dev restart  # Restart the controller pod
 ```
 
 ## Project structure
@@ -59,19 +57,18 @@ make -f Makefile.dev deploy
 ├── cmd/                           # Manager entry point
 ├── internal/
 │   ├── controller/                # Reconciliation logic
-│   ├── kubevip/                   # kube-vip static pod injection
-│   └── xoapi/                     # Xen Orchestra API client
+│   └── kubevip/                   # kube-vip static pod injection
 ├── config/
 │   ├── crd/                       # Generated CRDs (DO NOT EDIT)
 │   ├── manager/                   # Manager Deployment
 │   ├── rbac/                      # Generated RBAC (DO NOT EDIT)
-│   └── samples/                   # Example manifests
-│       ├── clusterclass/          # ClusterClass + templates
-│       ├── machinetemplates/      # VatesMachineTemplate (edit per env)
-│       ├── clusterctl/            # Template for clusterctl generate
-│       ├── example-cluster/       # Complete cluster example
-│       ├── standalone/            # Standalone VatesMachine tests
-│       └── packers/               # Packer image definitions
+├── examples/                      # Example manifests
+│   ├── ccm/                       # CCM deployment + ClusterResourceSet
+│   ├── clusterclass/              # ClusterClass + templates
+│   ├── clusterctl/                # Template for clusterctl generate
+│   ├── machinetemplates/          # VatesMachineTemplate (edit per env)
+│   ├── example-cluster/           # Complete cluster example
+│   └── standalone/                # Standalone VatesMachine tests
 ├── dist/                          # Generated release artifacts
 │   ├── install.yaml               # kubectl apply bundle
 │   ├── infrastructure-components.yaml  # clusterctl bundle
@@ -80,17 +77,11 @@ make -f Makefile.dev deploy
 
 ```
 
-## Distribution
+## Release artifacts
 
 ```bash
-# Install bundle (single command, no clusterctl)
-kubectl apply -f https://github.com/vatesfr/cluster-api-provider-vates/releases/latest/download/install.yaml
-
-# clusterctl release artifacts
+# Generate dist/ from the current source
 make release-manifests IMG=ghcr.io/vatesfr/cluster-api-provider-vates:latest
-
-# Helm chart (regenerate after manifest changes)
-kubebuilder edit --plugins=helm/v2-alpha --force
 ```
 
 ## License

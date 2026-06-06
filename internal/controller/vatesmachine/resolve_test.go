@@ -10,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	xoclient "github.com/vatesfr/xenorchestra-go-sdk/client"
@@ -17,7 +18,7 @@ import (
 	k8smocks "github.com/vatesfr/xenorchestra-k8s-common/mocks"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
-	infrastructurev1beta2 "git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2"
+	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 )
 
 var _ = Describe("ResolveBootstrapData", func() {
@@ -35,23 +36,35 @@ var _ = Describe("ResolveBootstrapData", func() {
 	})
 
 	It("returns requeue when Machine exists but DataSecretName is nil", func() {
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-			&infrastructurev1beta2.VatesMachine{
-				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		machine := &clusterv1.Machine{
+			ObjectMeta: metav1.ObjectMeta{Name: "owner", Namespace: "default", UID: "machine-uid"},
+			Spec: clusterv1.MachineSpec{
+				Bootstrap: clusterv1.Bootstrap{DataSecretName: nil},
+				InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+					Kind: "VatesMachine",
+					Name: "test",
+				},
 			},
-			&clusterv1.Machine{
-				ObjectMeta: metav1.ObjectMeta{Name: "owner", Namespace: "default"},
-				Spec: clusterv1.MachineSpec{
-					Bootstrap: clusterv1.Bootstrap{DataSecretName: nil},
-					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-						Kind: "VatesMachine",
-						Name: "test",
+		}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			machine,
+		).Build()
+
+		xm := &infrastructurev1beta2.VatesMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "default",
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: clusterv1.GroupVersion.String(),
+						Kind:       "Machine",
+						Name:       "owner",
+						UID:        "machine-uid",
+						Controller: ptr.To(true),
 					},
 				},
 			},
-		).Build()
-
-		xm := &infrastructurev1beta2.VatesMachine{ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"}}
+		}
 		result, err := ResolveBootstrapData(ctx, fakeClient, xm)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Requeue).To(BeTrue())

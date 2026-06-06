@@ -1,5 +1,5 @@
-//go:generate go run go.uber.org/mock/mockgen@v0.6.0 -destination=mock_v1client.go -package=controller -self_package=git.vates.tech/patrice.ferlet/vates-capi/internal/controller github.com/vatesfr/xenorchestra-go-sdk/client XOClient
-//go:generate go run go.uber.org/mock/mockgen@v0.6.0 -destination=mock_task.go -package=controller -self_package=git.vates.tech/patrice.ferlet/vates-capi/internal/controller github.com/vatesfr/xenorchestra-go-sdk/pkg/services/library Task,TaskAction
+//go:generate go run go.uber.org/mock/mockgen@v0.6.0 -destination=mock_v1client.go -package=controller -self_package=github.com/vatesfr/cluster-api-provider-vates/internal/controller github.com/vatesfr/xenorchestra-go-sdk/client XOClient
+//go:generate go run go.uber.org/mock/mockgen@v0.6.0 -destination=mock_task.go -package=controller -self_package=github.com/vatesfr/cluster-api-provider-vates/internal/controller github.com/vatesfr/xenorchestra-go-sdk/pkg/services/library Task,TaskAction
 
 // Package controller implements the reconciliation logic for infrastructure
 // resources managed by the Vates CAPI provider.

@@ -39,10 +39,11 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	infrastructurev1beta2 "git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2"
-	"git.vates.tech/patrice.ferlet/vates-capi/internal/controller"
+	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
+	"github.com/vatesfr/cluster-api-provider-vates/internal/controller"
 	xok8scommon "github.com/vatesfr/xenorchestra-k8s-common"
 
+	addonsv1 "sigs.k8s.io/cluster-api/api/addons/v1beta2"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	// +kubebuilder:scaffold:imports
 )
@@ -57,6 +58,7 @@ func init() {
 
 	utilruntime.Must(infrastructurev1beta2.AddToScheme(scheme))
 	utilruntime.Must(clusterv1.AddToScheme(scheme))
+	utilruntime.Must(addonsv1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 

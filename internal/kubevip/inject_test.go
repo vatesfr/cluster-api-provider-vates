@@ -57,8 +57,8 @@ func TestPostScript(t *testing.T) {
 	if !strings.Contains(script, "/.kube/config") {
 		t.Error("post script must sed mountPath to /.kube/config")
 	}
-	if strings.Contains(script, "super-admin.conf") {
-		t.Error("post script should NOT reference super-admin.conf")
+	if !strings.Contains(script, "super-admin.conf") {
+		t.Error("post script should reference super-admin.conf")
 	}
 }
 

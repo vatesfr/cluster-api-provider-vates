@@ -3,3 +3,4 @@ kind: Kustomization
 
 resources:
   - from-scratch
+  - prefilled

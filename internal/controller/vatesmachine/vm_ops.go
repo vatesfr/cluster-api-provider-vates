@@ -19,7 +19,7 @@ import (
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
 	xok8scommon "github.com/vatesfr/xenorchestra-k8s-common"
 
-	infrastructurev1beta2 "git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2"
+	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 )
 
 // CreateVM creates a new VM from the template with the given parameters. It
@@ -51,8 +51,10 @@ func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClie
 		logger.Info("Set VM memory", "memory", vatesMachine.Spec.ResourceSet.Memory, "bytes", memBytes)
 	}
 
+	v1Client := xoClient.Client.V1Client()
+	v1Concrete, v1Ok := v1Client.(*xoclient.Client)
+
 	if vatesMachine.Spec.NetworkConfig != nil && len(vatesMachine.Spec.NetworkConfig.Networks) > 0 {
-		v1Client := xoClient.Client.V1Client()
 		for i, netConfig := range vatesMachine.Spec.NetworkConfig.Networks {
 			networkID, err := ResolveNetworkID(v1Client, netConfig, poolID)
 			if err != nil {
@@ -76,10 +78,41 @@ func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClie
 
 	logger.Info("VM created", "name", vm.NameLabel, "id", vm.ID.String(), "pool", poolID.String())
 
+	diskSize := ""
+	if vatesMachine.Spec.ResourceSet != nil {
+		diskSize = vatesMachine.Spec.ResourceSet.DiskSize
+	}
+	if diskSize != "" {
+		diskQty, qErr := resource.ParseQuantity(diskSize)
+		if qErr == nil {
+			if v1Ok {
+				disks, dErr := v1Client.GetDisks(&xoclient.Vm{Id: vm.ID.String()})
+				if dErr != nil {
+					logger.Error(dErr, "Failed to get disks for VM resize")
+				} else if len(disks) > 0 {
+					currentSize := int64(disks[0].Size)
+					requestedSize := diskQty.Value()
+					if currentSize >= requestedSize {
+						logger.Info("VM disk already at or above requested size, skipping resize", "currentSize", currentSize, "requestedSize", requestedSize, "diskSize", diskSize)
+					} else {
+						var success bool
+						if err := v1Concrete.Call("vdi.set", map[string]any{
+							"id":   disks[0].VDIId,
+							"size": requestedSize,
+						}, &success); err != nil {
+							logger.Info("Failed to set disk size (will continue)", "diskSize", diskSize, "requestedSize", requestedSize, "currentSize", currentSize, "error", err)
+						} else {
+							logger.Info("Set VM disk size", "diskSize", diskSize, "success", success)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if vatesMachine.Spec.ResourceSet != nil && vatesMachine.Spec.ResourceSet.CPUs != nil {
 		cpus := int(*vatesMachine.Spec.ResourceSet.CPUs)
-		v1Client := xoClient.Client.V1Client()
-		if v1Concrete, ok := v1Client.(*xoclient.Client); ok {
+		if v1Ok {
 			var success bool
 			if err := v1Concrete.Call("vm.set", map[string]any{
 				"id":   vm.ID.String(),
@@ -93,10 +126,7 @@ func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClie
 	}
 
 	// TODO: Change this as soon as API v2 allows the boot order configuration
-	v1Client := xoClient.Client.V1Client()
-	if v1Client == nil {
-		logger.Info("V1 client not available, skipping boot order configuration")
-	} else if v1Concrete, ok := v1Client.(*xoclient.Client); ok {
+	if v1Ok {
 		var success bool
 		if err := v1Concrete.Call("vm.setBootOrder", map[string]any{
 			"vm":    vm.ID.String(),
@@ -107,7 +137,7 @@ func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClie
 			logger.Info("Set VM boot order to disk", "id", vm.ID.String(), "success", success)
 		}
 	} else {
-		logger.Info("V1 client type assertion failed, skipping boot order configuration")
+		logger.Info("V1 client not available or type assertion failed, skipping boot order configuration")
 	}
 
 	providerID := xok8scommon.GetProviderID(poolID, vm)
@@ -183,23 +213,56 @@ func StartVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClien
 
 // ResolveVMIP returns the IPv4 address of the VM, falling back from the V2
 // MainIpAddress (which can be an IPv6 link-local) to the V1 Addresses field.
+// When both are empty, it retries with exponential backoff for up to 2 minutes.
 func ResolveVMIP(ctx context.Context, xoClient *xok8scommon.XoClient, vm *payloads.VM) string {
+	logger := log.FromContext(ctx)
+
 	vmIP := vm.MainIpAddress
-	if vmIP == "" || strings.HasPrefix(vmIP, "fe80:") {
-		v1Client := xoClient.Client.V1Client()
-		if v1Client != nil {
-			v1VM, err := v1Client.GetVm(xoclient.Vm{Id: vm.ID.String()})
-			if err == nil && v1VM != nil && len(v1VM.Addresses) > 0 {
-				for _, addr := range v1VM.Addresses {
-					if addr != "" && !strings.HasPrefix(addr, "fe80:") && strings.Contains(addr, ".") {
-						vmIP = addr
-						break
-					}
+	if vmIP != "" && !strings.HasPrefix(vmIP, "fe80:") {
+		return vmIP
+	}
+
+	v1Client := xoClient.Client.V1Client()
+	if v1Client == nil {
+		logger.Info("V1 client not available, cannot resolve IP via V1 API", "id", vm.ID.String())
+		return vmIP
+	}
+
+	for attempt := 0; attempt < 30; attempt++ {
+		select {
+		case <-ctx.Done():
+			logger.Info("Context cancelled while resolving VM IP", "id", vm.ID.String())
+			return ""
+		default:
+		}
+
+		v1VM, err := v1Client.GetVm(xoclient.Vm{Id: vm.ID.String()})
+		if err != nil {
+			logger.Error(err, "Failed to get VM from V1 API, retrying", "id", vm.ID.String(), "attempt", attempt)
+			time.Sleep(4 * time.Second)
+			continue
+		}
+		if v1VM == nil {
+			logger.Info("V1 API returned nil VM, retrying", "id", vm.ID.String(), "attempt", attempt)
+			time.Sleep(4 * time.Second)
+			continue
+		}
+
+		if len(v1VM.Addresses) > 0 {
+			for _, addr := range v1VM.Addresses {
+				if addr != "" && !strings.HasPrefix(addr, "fe80:") && strings.Contains(addr, ".") {
+					logger.Info("Resolved VM IP from V1 Addresses", "id", vm.ID.String(), "ip", addr, "attempt", attempt)
+					return addr
 				}
 			}
 		}
+
+		logger.Info("VM IP not yet available, retrying", "id", vm.ID.String(), "attempt", attempt, "mainIp", vm.MainIpAddress, "v1Addresses", v1VM.Addresses)
+		time.Sleep(4 * time.Second)
 	}
-	return vmIP
+
+	logger.Info("Failed to resolve VM IP after retries", "id", vm.ID.String())
+	return ""
 }
 
 // ManageVIFs ensures all desired VIFs are connected and sets the allowed IP
@@ -262,7 +325,7 @@ func ManageVIFs(ctx context.Context, xoClient *xok8scommon.XoClient, vatesMachin
 func WaitForVMReady(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, vatesMachine *infrastructurev1beta2.VatesMachine, vm *payloads.VM) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 
-	vm, vmWasStarted, err := StartVM(ctx, c, xoClient, vatesMachine, vm)
+	vm, _, err := StartVM(ctx, c, xoClient, vatesMachine, vm)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -277,14 +340,6 @@ func WaitForVMReady(ctx context.Context, c client.Client, xoClient *xok8scommon.
 			return reconcile.Result{}, ue
 		}
 		return reconcile.Result{RequeueAfter: 3 * time.Second}, nil
-	}
-
-	if vmWasStarted && (vatesMachine.Spec.NetworkConfig == nil || vatesMachine.Spec.NetworkConfig.GuestConfig == "") {
-		logger.Info("VM was just started without guest network config, waiting for IP to stabilize before marking Ready", "id", vm.ID.String(), "currentIp", vmIP)
-		if ue := UpdateCondition(ctx, c, vatesMachine, metav1.ConditionFalse, "WaitingForIPStabilization", "VM just started, waiting for IP address to stabilize"); ue != nil {
-			return reconcile.Result{}, ue
-		}
-		return reconcile.Result{RequeueAfter: 15 * time.Second}, nil
 	}
 
 	if err := ManageVIFs(ctx, xoClient, vatesMachine, vm); err != nil {

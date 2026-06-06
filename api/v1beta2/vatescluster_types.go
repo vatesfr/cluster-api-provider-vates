@@ -4,23 +4,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// KubeVIPSpec configures kube-vip for the control plane load balancer.
-type KubeVIPSpec struct {
-	// Enabled enables kube-vip static pod on control plane nodes.
-	Enabled bool `json:"enabled"`
-}
-
 // VatesClusterSpec defines the desired state of a Xen Orchestra cluster.
 type VatesClusterSpec struct {
 	// ControlPlaneEndpoint is the endpoint for the control plane.
 	// +optional
 	ControlPlaneEndpoint *APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
 
-	// KubeVIP configures the kube-vip static pod for control plane VIP management.
-	// When enabled, the controller injects kube-vip setup scripts into the
-	// cloud-init data of control plane machines.
+	// ControlPlaneLB selects the control plane load balancer implementation.
+	// Supported values: "kube-vip". When set, the controller injects setup
+	// scripts into the cloud-init data of control plane machines.
 	// +optional
-	KubeVIP *KubeVIPSpec `json:"kubevip,omitempty"`
+	// +kubebuilder:validation:Enum=kube-vip
+	ControlPlaneLB *string `json:"controlPlaneLB,omitempty"`
 }
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.
@@ -34,6 +29,13 @@ type APIEndpoint struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
 	Port int32 `json:"port"`
+
+	// Subnet is the CIDR subnet mask used by the control plane load balancer.
+	// If not set, the load balancer implementation will auto-detect.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=32
+	Subnet *int32 `json:"subnet,omitempty"`
 }
 
 // VatesClusterStatus defines the observed state of VatesCluster.

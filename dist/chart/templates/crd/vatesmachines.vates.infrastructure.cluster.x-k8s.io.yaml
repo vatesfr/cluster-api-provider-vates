@@ -136,11 +136,10 @@ spec:
                     format: int32
                     minimum: 1
                     type: integer
-                  diskGB:
-                    description: DiskGB is the disk size in GB.
-                    format: int64
-                    minimum: 10
-                    type: integer
+                  diskSize:
+                    description: DiskSize is the disk size allocated to the VM in
+                      Kubernetes resource format (e.g. "30Gi", "50G").
+                    type: string
                   memory:
                     description: Memory is the memory allocated to the VM in Kubernetes
                       resource format (e.g. "8Gi", "8192Mi").

@@ -11,7 +11,7 @@ plugins:
     manifests: dist/install.yaml
     output: dist
 projectName: vates-capi
-repo: git.vates.tech/patrice.ferlet/vates-capi
+repo: github.com/vatesfr/cluster-api-provider-vates
 resources:
 - api:
     crdVersion: v1
@@ -20,7 +20,7 @@ resources:
   domain: infrastructure.cluster.x-k8s.io
   group: vates
   kind: VatesMachine
-  path: git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2
+  path: github.com/vatesfr/cluster-api-provider-vates/api/v1beta2
   version: v1beta2
 - api:
     crdVersion: v1
@@ -29,7 +29,7 @@ resources:
   domain: infrastructure.cluster.x-k8s.io
   group: vates
   kind: VatesCluster
-  path: git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2
+  path: github.com/vatesfr/cluster-api-provider-vates/api/v1beta2
   version: v1beta2
 - api:
     crdVersion: v1
@@ -37,6 +37,6 @@ resources:
   domain: infrastructure.cluster.x-k8s.io
   group: vates
   kind: VatesClusterTemplate
-  path: git.vates.tech/patrice.ferlet/vates-capi/api/v1beta2
+  path: github.com/vatesfr/cluster-api-provider-vates/api/v1beta2
   version: v1beta2
 version: "3"

@@ -16,10 +16,11 @@ spec:
         - sysctl --system
         - swapoff -a; sed -i '/ swap /d' /etc/fstab 2>/dev/null; true
         - dnf install -y epel-release
-        - dnf install -y containerd xe-guest-utilities-latest
+        - dnf install -y containerd
         - containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/' | tee /etc/containerd/config.toml
+        - mkdir -p /etc/containerd/certs.d/registry.k8s.io && printf 'server = "https://registry.k8s.io"\n\n[host."https://mirror.gcr.io"]\n  capabilities = ["pull", "resolve"]\n' > /etc/containerd/certs.d/registry.k8s.io/hosts.toml
         - systemctl enable --now containerd
-        - systemctl enable --now xe-linux-distribution
+        
         - |
           for f in /run/kubeadm/kubeadm.yaml /run/kubeadm/kubeadm-join-config.yaml; do
             [ -f "$f" ] && FULL=$(grep 'kubernetesVersion:' "$f" | awk '{print $2}') && break
@@ -35,7 +36,7 @@ spec:
           gpgkey=https://pkgs.k8s.io/core:/stable:/${MINOR}/rpm/repodata/repomd.xml.key
           EOF
         - dnf install -y kubelet kubeadm kubectl --disableexcludes=kubernetes
-        - systemctl enable kubelet
+        - systemctl enable --now kubelet
       joinConfiguration:
         nodeRegistration:
           kubeletExtraArgs:

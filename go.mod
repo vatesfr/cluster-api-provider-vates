@@ -1,4 +1,4 @@
-module git.vates.tech/patrice.ferlet/vates-capi
+module github.com/vatesfr/cluster-api-provider-vates
 
 go 1.25.8
 
