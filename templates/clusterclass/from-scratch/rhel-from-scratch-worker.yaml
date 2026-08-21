@@ -16,7 +16,7 @@ spec:
         - sysctl --system
         - swapoff -a; sed -i '/ swap /d' /etc/fstab 2>/dev/null; true
         - dnf install -y epel-release
-        - dnf install -y containerd
+        - dnf install -y containerd runc
         - containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/' | tee /etc/containerd/config.toml
         - mkdir -p /etc/containerd/certs.d/registry.k8s.io && printf 'server = "https://registry.k8s.io"\n\n[host."https://mirror.gcr.io"]\n  capabilities = ["pull", "resolve"]\n' > /etc/containerd/certs.d/registry.k8s.io/hosts.toml
         - systemctl enable --now containerd
@@ -42,3 +42,5 @@ spec:
           kubeletExtraArgs:
             - name: cgroup-driver
               value: systemd
+            - name: cloud-provider
+              value: external

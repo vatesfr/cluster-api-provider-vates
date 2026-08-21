@@ -13,8 +13,7 @@ on XenServer / XCP-ng pools as Kubernetes worker and control plane nodes.
 CLUSTER_TOPOLOGY=true clusterctl init --bootstrap kubeadm --control-plane kubeadm
 
 # 2. Deploy the vates provider
-kubectl apply -f https://github.com/vatesfr/cluster-api-provider-vates/releases/latest/download/install.yaml
-
+kubectl apply -f https://raw.githubusercontent.com/vatesfr/cluster-api-provider-vates/refs/heads/main/dist/install.yaml
 # 3. Create the XO credentials secret
 kubectl create secret generic xo-credentials -n capi-system \
   --from-literal=url="https://<your-xoa>" \
@@ -28,18 +27,30 @@ All templates must have **cloud-init** support enabled and **Xen guest tools** i
 
 Two ClusterClass variants are provided:
 
-- **`prefilled`** — for templates that already have kubelet, kubeadm, containerd, kube-vip, and Cilium images pre-installed. Edit `examples/machinetemplates/prefilled/`.
-- **`from-scratch`** — for minimal templates (just containerd + Xen guest tools). The ClusterClass handles installing everything via `preKubeadmCommands`. Edit `examples/machinetemplates/from-scratch/`.
+- **`prefilled`** — for templates that already have kubelet, kubeadm, containerd, kube-vip, and Cilium images pre-installed. Edit `templates/machinetemplates/prefilled/`.
+- **`from-scratch`** — for minimal templates (just containerd + Xen guest tools). The ClusterClass handles installing everything via `preKubeadmCommands`. Edit `templates/machinetemplates/from-scratch/`.
 
-Edit the matching `VatesMachineTemplate` files to set your `templateID`, `poolID`, and network name, then apply:
+
+Edit the matching `VatesMachineTemplate` files to set your `templateID`, `poolID`, and network name.
+
+Note: TemplateID is without PoolID in it and must be bootable
 
 ```bash
 # 4. Deploy ClusterClass + machine templates
-kubectl apply -k examples/clusterclass/
-kubectl apply -k examples/machinetemplates/prefilled/
+kubectl apply -k templates/clusterclass/
 
+# Choose only one:
+# For prefilled machine templates
+kubectl apply -k templates/machinetemplates/prefilled/
+# For from scratch machine templates
+kubectl apply -k templates/machinetemplates/from-scratch
+```
+
+Edit the example, then apply:
+
+```
 # 5. Create a cluster
-kubectl apply -f examples/example-cluster/capi-cluster.yaml
+kubectl apply -f templates/example-cluster/capi-cluster.yaml
 ```
 
 ## Development
