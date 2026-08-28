@@ -1,0 +1,21 @@
+# TalosConfigTemplate (CABPT) for worker bootstrap
+# Requires: clusterctl init --bootstrap talos --control-plane talos
+apiVersion: bootstrap.cluster.x-k8s.io/v1alpha3
+kind: TalosConfigTemplate
+metadata:
+  name: talos-worker
+  namespace: default
+spec:
+  template:
+    spec:
+      generateType: join
+      strategicPatches:
+        - |
+          machine:
+            time:
+              servers:
+                - time.cloudflare.com
+                - pool.ntp.org
+            kubelet:
+              extraArgs:
+                cloud-provider: external

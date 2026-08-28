@@ -1,0 +1,37 @@
+# TalosControlPlane (CACPPT) for control plane management
+# Requires: clusterctl init --bootstrap talos --control-plane talos
+#
+# Replace <your-cp-vip> with the IP you chose for the Talos shared control
+# plane VIP (Talos native, not kube-vip). It must match
+# XOCluster.spec.controlPlaneEndpoint.host.
+apiVersion: controlplane.cluster.x-k8s.io/v1alpha3
+kind: TalosControlPlane
+metadata:
+  name: talos-cp
+  namespace: default
+spec:
+  version: v1.36.1
+  replicas: 3
+  infrastructureTemplate:
+    kind: XOMachineTemplate
+    apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+    name: talos-cp
+  controlPlaneConfig:
+    controlplane:
+      generateType: controlplane
+      strategicPatches:
+        - |
+          machine:
+            time:
+              servers:
+                - time.cloudflare.com
+                - pool.ntp.org
+            kubelet:
+              extraArgs:
+                cloud-provider: external
+            network:
+              interfaces:
+                - interface: eth0
+                  dhcp: true
+                  vip:
+                    ip: <your-cp-vip>

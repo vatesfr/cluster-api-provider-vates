@@ -34,3 +34,6 @@ examples/
 misc/
 scripts/
 docs/
+
+# Local environment overlays (real XO resource UUIDs — not for distribution)
+templates/*/overlays/
