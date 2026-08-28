@@ -1,0 +1,12 @@
+# Talos CAPI cluster on Xen Orchestra.
+# Wrapper that points to the base templates.
+#
+# Usage:
+#   kubectl apply -k templates/talos/
+#
+# See templates/talos/base/kustomization.yaml and templates/talos/README.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - base

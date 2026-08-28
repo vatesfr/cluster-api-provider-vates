@@ -433,6 +433,17 @@ spec:
                   BootstrapData is the bootstrap data (cloud-init) to inject into the VM.
                   If empty, the controller will try to read it from the owner Machine's bootstrap secret.
                 type: string
+              bootstrapProvider:
+                default: kubeadm
+                description: |-
+                  BootstrapProvider selects the bootstrap provider for this machine.
+                  Supported values: "kubeadm" (default), "talos".
+                  When "talos", the controller passes bootstrap data directly to XO
+                  without cloud-init transformation, SSH key injection, or kube-vip.
+                enum:
+                - kubeadm
+                - talos
+                type: string
               failureDomain:
                 description: FailureDomain is the failure domain unique identifier
                   this Machine should be attached to, as defined in ClusterStatus.FailureDomains.
@@ -712,6 +723,17 @@ spec:
                           BootstrapData is the bootstrap data (cloud-init) to inject into the VM.
                           If empty, the controller will try to read it from the owner Machine's bootstrap secret.
                         type: string
+                      bootstrapProvider:
+                        default: kubeadm
+                        description: |-
+                          BootstrapProvider selects the bootstrap provider for this machine.
+                          Supported values: "kubeadm" (default), "talos".
+                          When "talos", the controller passes bootstrap data directly to XO
+                          without cloud-init transformation, SSH key injection, or kube-vip.
+                        enum:
+                        - kubeadm
+                        - talos
+                        type: string
                       failureDomain:
                         description: FailureDomain is the failure domain unique identifier
                           this Machine should be attached to, as defined in ClusterStatus.FailureDomains.
@@ -952,6 +974,15 @@ rules:
   resources:
   - clusters
   - clusters/status
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cluster.x-k8s.io
+  resources:
   - machinedeployments
   - machinedeployments/status
   - machines

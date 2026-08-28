@@ -1,0 +1,31 @@
+# Talos CAPI cluster on Xen Orchestra — base templates.
+# Uses placeholders — replace with your XO environment values, or use an
+# overlay (see overlays/) for a specific environment.
+#
+# Prerequisites on the management cluster (kind):
+#   clusterctl init --bootstrap talos --control-plane talos --infrastructure vates
+#
+# Then apply:
+#   kubectl apply -k templates/talos/base/
+#
+# Monitor:
+#   kubectl get cluster,taloscontrolplane,machinedeployment,xomachine -w
+#
+# Retrieve talosconfig:
+#   kubectl get talosconfig -o yaml talos-cp-XXXX -o jsonpath='{.status.talosConfig}'
+#
+# Important: the Talos VM template must be built for the "nocloud" platform
+# with the siderolabs/xen-guest-agent system extension so that XO reports IPs,
+# and the template must have viridian=false (otherwise XO adds a MBR to the
+# cloud-init config drive that Talos blockutils cannot mount).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - talos-xocluster.yaml
+  - talos-xomachinetemplate-cp.yaml
+  - talos-xomachinetemplate-worker.yaml
+  - talos-controlplane.yaml
+  - talos-configtemplate.yaml
+  - talos-machinedeployment.yaml
+  - talos-cluster.yaml

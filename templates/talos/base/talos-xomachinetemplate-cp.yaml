@@ -1,0 +1,26 @@
+# XOMachineTemplate for Talos control plane nodes
+# Uses the Talos VM template (nocloud platform with xen-guest-agent)
+#
+# Replace the placeholders with your XO environment values:
+#   templateID: UUID of your Talos nocloud template (viridian=false)
+#   poolID:     UUID of your XO pool
+#   networkID:  UUID of your XO network
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOMachineTemplate
+metadata:
+  name: talos-cp
+  namespace: default
+spec:
+  template:
+    spec:
+      bootstrapProvider: talos
+      namePrefix: talos-cp
+      templateID: <your-xo-talos-template-uuid>
+      poolID: <your-xo-pool-uuid>
+      resourceSet:
+        cpus: 4
+        memory: 8Gi
+        diskSize: 40Gi
+      networkConfig:
+        networks:
+          - networkID: <your-xo-network-uuid>

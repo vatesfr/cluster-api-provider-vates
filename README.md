@@ -27,8 +27,8 @@ All templates must have **cloud-init** support enabled and **Xen guest tools** i
 
 Two ClusterClass variants are provided:
 
-- **`prefilled`** — for templates that already have kubelet, kubeadm, containerd, kube-vip, and Cilium images pre-installed. Edit `templates/machinetemplates/prefilled/`.
-- **`from-scratch`** — for minimal templates (just containerd + Xen guest tools). The ClusterClass handles installing everything via `preKubeadmCommands`. Edit `templates/machinetemplates/from-scratch/`.
+- **`prefilled`** — for templates that already have kubelet, kubeadm, containerd, kube-vip, and Cilium images pre-installed. Edit `templates/kubeadm/base/machinetemplates/prefilled/`.
+- **`from-scratch`** — for minimal templates (just containerd + Xen guest tools). The ClusterClass handles installing everything via `preKubeadmCommands`. Edit `templates/kubeadm/base/machinetemplates/from-scratch/`.
 
 
 Edit the matching `VatesMachineTemplate` files to set your `templateID`, `poolID`, and network name.
@@ -37,20 +37,20 @@ Note: TemplateID is without PoolID in it and must be bootable
 
 ```bash
 # 4. Deploy ClusterClass + machine templates
-kubectl apply -k templates/clusterclass/
+kubectl apply -k templates/kubeadm/base/clusterclass/
 
 # Choose only one:
 # For prefilled machine templates
-kubectl apply -k templates/machinetemplates/prefilled/
-# For from scratch machine templates
-kubectl apply -k templates/machinetemplates/from-scratch
+kubectl apply -k templates/kubeadm/base/machinetemplates/prefilled/
+# For from scratch machine templates
+kubectl apply -k templates/kubeadm/base/machinetemplates/from-scratch
 ```
 
 Edit the example, then apply:
 
 ```
 # 5. Create a cluster
-kubectl apply -f templates/example-cluster/capi-cluster.yaml
+kubectl apply -f templates/kubeadm/base/example-cluster/capi-cluster.yaml
 ```
 
 ## Development
@@ -67,18 +67,23 @@ make -f Makefile.dev restart  # Restart the controller pod
 ├── api/                           # CRD types (+kubebuilder markers)
 ├── cmd/                           # Manager entry point
 ├── internal/
+│   ├── bootstrap/                 # Bootstrap providers (kubeadm, talos)
 │   ├── controller/                # Reconciliation logic
 │   └── kubevip/                   # kube-vip static pod injection
 ├── config/
 │   ├── crd/                       # Generated CRDs (DO NOT EDIT)
 │   ├── manager/                   # Manager Deployment
 │   ├── rbac/                      # Generated RBAC (DO NOT EDIT)
-├── examples/                      # Example manifests
-│   ├── clusterclass/              # ClusterClass + templates
-│   ├── clusterctl/                # Template for clusterctl generate
-│   ├── machinetemplates/          # VatesMachineTemplate (edit per env)
-│   ├── example-cluster/           # Complete cluster example
-│   └── standalone/                # Standalone VatesMachine tests
+├── templates/
+│   ├── kubeadm/                   # kubeadm cluster templates
+│   │   ├── clusterclass/          # ClusterClass + templates
+│   │   ├── machinetemplates/      # XOMachineTemplate (edit per env)
+│   │   ├── example-cluster/       # Complete cluster example
+│   │   ├── clusterctl/            # Template for clusterctl generate
+│   │   └── packer/                # AlmaLinux cloud image builder
+│   ├── talos/                     # Talos cluster templates (base + overlays)
+│   └── README.md                  # Template usage guide
+├── examples/                      # Example manifests (kind)
 ├── dist/                          # Generated release artifacts
 │   ├── install.yaml               # kubectl apply bundle
 │   ├── infrastructure-components.yaml  # clusterctl bundle

@@ -1,0 +1,17 @@
+# XOCluster for Talos
+# Note: no controlPlaneLB (Talos manages VIP natively via machine config)
+# Note: no injectSSHKeys (Talos is immutable, no SSH)
+#
+# Replace <your-cp-vip> with the Talos shared control plane VIP and adjust the
+# subnet to match your network.
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOCluster
+metadata:
+  name: talos-cluster
+  namespace: default
+spec:
+  controlPlaneEndpoint:
+    host: <your-cp-vip>
+    port: 6443
+    subnet: 16
+  injectSSHKeys: false
