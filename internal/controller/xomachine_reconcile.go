@@ -18,6 +18,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
 	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
+	"github.com/vatesfr/cluster-api-provider-vates/internal/bootstrap"
 	xomachine "github.com/vatesfr/cluster-api-provider-vates/internal/controller/xomachine"
 )
 
@@ -32,7 +33,7 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, vatesMachine 
 		return *result, err
 	}
 
-	bsResult, err := xomachine.ResolveBootstrapData(ctx, r.Client, vatesMachine)
+	bsResult, err := bootstrap.ResolveBootstrapData(ctx, r.Client, vatesMachine)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -62,7 +63,16 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, vatesMachine 
 		return ctrl.Result{}, nil
 	}
 
-	cloudConfig, err := xomachine.BuildCloudConfig(ctx, xoClient, bsResult.Data, r.resolveInjectSSHKeys(ctx, vatesMachine, bsResult.Machine))
+	provider := bootstrap.GetProvider(bsResult.BootstrapProvider)
+	deps := bootstrap.Dependencies{
+		Client:        r.Client,
+		XOClient:      xoClient,
+		Machine:       bsResult.Machine,
+		XOMachine:     vatesMachine,
+		BootstrapData: bsResult.Data,
+	}
+
+	cloudConfig, err := provider.BuildCloudConfig(ctx, deps)
 	if err != nil {
 		logger.Error(err, "Failed to build cloud config")
 		if updateErr := xomachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "CloudConfigBuildFailed", err.Error()); updateErr != nil {
@@ -71,10 +81,7 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, vatesMachine 
 		return ctrl.Result{}, err
 	}
 
-	cloudConfig, err = r.injectKubeVIPIfNeeded(ctx, cloudConfig, bsResult, vatesMachine)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
+	networkConfig := provider.NetworkConfig(deps)
 
 	vmName := r.buildVMName(vatesMachine, bsResult)
 
@@ -108,7 +115,7 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, vatesMachine 
 		}
 		vm, err = xomachine.LookupExistingVM(ctx, r.Client, xoClient, vatesMachine, vmID)
 	} else {
-		vm, err = xomachine.CreateVM(ctx, r.Client, xoClient, vatesMachine, poolID, templateID, cloudConfig, vmName)
+		vm, err = xomachine.CreateVM(ctx, r.Client, xoClient, vatesMachine, poolID, templateID, cloudConfig, networkConfig, vmName)
 	}
 	if err != nil {
 		return ctrl.Result{}, err
@@ -151,57 +158,7 @@ func (r *XOMachineReconciler) ensureFinalizer(ctx context.Context, vatesMachine 
 	return nil
 }
 
-func (r *XOMachineReconciler) injectKubeVIPIfNeeded(
-	ctx context.Context,
-	cloudConfig string,
-	bsResult xomachine.ResolveBootstrapDataResult,
-	vatesMachine *infrastructurev1beta2.XOMachine,
-) (string, error) {
-	logger := log.FromContext(ctx)
-	if bsResult.Machine == nil {
-		return cloudConfig, nil
-	}
-
-	if _, ok := bsResult.Machine.Labels[clusterv1.MachineControlPlaneLabel]; !ok {
-		return cloudConfig, nil
-	}
-
-	clusterName := bsResult.Machine.Labels["cluster.x-k8s.io/cluster-name"]
-	if clusterName == "" {
-		return cloudConfig, nil
-	}
-
-	vatesCluster, err := xomachine.GetXOCluster(ctx, r.Client, vatesMachine.Namespace, clusterName)
-	if err != nil {
-		logger.Error(err, "Failed to get XOCluster for kube-vip injection")
-		return cloudConfig, nil
-	}
-
-	if vatesCluster != nil && vatesCluster.Spec.ControlPlaneLB != nil && *vatesCluster.Spec.ControlPlaneLB == "kube-vip" {
-		cloudConfig, err = xomachine.InjectKubeVIP(ctx, r.Client, vatesMachine, bsResult.Machine, vatesCluster, cloudConfig)
-		if err != nil {
-			return "", err
-		}
-	}
-	return cloudConfig, nil
-}
-
-func (r *XOMachineReconciler) resolveInjectSSHKeys(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachine, machine *clusterv1.Machine) bool {
-	if machine == nil {
-		return false
-	}
-	clusterName := machine.Labels["cluster.x-k8s.io/cluster-name"]
-	if clusterName == "" {
-		return false
-	}
-	vatesCluster, err := xomachine.GetXOCluster(ctx, r.Client, vatesMachine.Namespace, clusterName)
-	if err != nil || vatesCluster == nil {
-		return false
-	}
-	return vatesCluster.Spec.InjectSSHKeys
-}
-
-func (r *XOMachineReconciler) buildVMName(vatesMachine *infrastructurev1beta2.XOMachine, bsResult xomachine.ResolveBootstrapDataResult) string {
+func (r *XOMachineReconciler) buildVMName(vatesMachine *infrastructurev1beta2.XOMachine, bsResult bootstrap.ResolveBootstrapDataResult) string {
 	if bsResult.Machine == nil {
 		return vatesMachine.Spec.NamePrefix
 	}

@@ -25,10 +25,10 @@ import (
 	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 )
 
-func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, vatesMachine *infrastructurev1beta2.XOMachine, poolID uuid.UUID, templateID uuid.UUID, cloudConfig string, vmName string) (*payloads.VM, error) {
+func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, vatesMachine *infrastructurev1beta2.XOMachine, poolID uuid.UUID, templateID uuid.UUID, cloudConfig string, networkConfig *string, vmName string) (*payloads.VM, error) {
 	logger := log.FromContext(ctx)
 
-	createParams := buildCreateParams(vatesMachine, templateID, vmName, cloudConfig)
+	createParams := buildCreateParams(templateID, vmName, cloudConfig, networkConfig)
 
 	if vatesMachine.Spec.ResourceSet != nil && vatesMachine.Spec.ResourceSet.Memory != "" {
 		memQty, err := resource.ParseQuantity(vatesMachine.Spec.ResourceSet.Memory)
@@ -73,16 +73,14 @@ func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClie
 	return vm, nil
 }
 
-func buildCreateParams(vatesMachine *infrastructurev1beta2.XOMachine, templateID uuid.UUID, vmName string, cloudConfig string) *payloads.CreateVMParams {
+func buildCreateParams(templateID uuid.UUID, vmName string, cloudConfig string, networkConfig *string) *payloads.CreateVMParams {
 	createParams := &payloads.CreateVMParams{
-		NameLabel:   vmName,
-		Template:    templateID,
-		AutoPoweron: ptr.To(false),
-		Clone:       ptr.To(true),
-		CloudConfig: ptr.To(cloudConfig),
-	}
-	if vatesMachine.Spec.NetworkConfig != nil && vatesMachine.Spec.NetworkConfig.GuestConfig != "" {
-		createParams.NetworkConfig = ptr.To(vatesMachine.Spec.NetworkConfig.GuestConfig)
+		NameLabel:     vmName,
+		Template:      templateID,
+		AutoPoweron:   ptr.To(false),
+		Clone:         ptr.To(true),
+		CloudConfig:   ptr.To(cloudConfig),
+		NetworkConfig: networkConfig,
 	}
 	return createParams
 }
@@ -160,7 +158,7 @@ func findMainDisk(disks []xoclient.Disk) *xoclient.Disk {
 		return &disks[0]
 	}
 	for i := range disks {
-		if disks[i].IsCdDrive {
+		if disks[i].IsCdDrive || isCloudConfigDrive(disks[i]) {
 			continue
 		}
 		if disks[i].Bootable {
@@ -177,17 +175,19 @@ func findMainDisk(disks []xoclient.Disk) *xoclient.Disk {
 			best = &disk
 		}
 	}
-	if best == nil {
-		return &disks[0]
-	}
 	return best
 }
 
 // isCloudConfigDrive reports whether the disk is the cloud-init config drive,
-// identified by its name label.
+// identified by its name label. The match is specific to config drives (e.g.
+// XO's "XO CloudConfigDrive") so that Talos disks named "*-nocloud" are not
+// mistaken for config drives.
 func isCloudConfigDrive(d xoclient.Disk) bool {
 	name := strings.ToLower(d.NameLabel)
-	return strings.Contains(name, "cloud") || strings.Contains(name, "config drive") || strings.Contains(name, "configdrive")
+	return strings.Contains(name, "cloudconfigdrive") ||
+		strings.Contains(name, "cloud config drive") ||
+		strings.Contains(name, "cloud-init") ||
+		strings.Contains(name, "cloudinit")
 }
 
 // diskOrder returns a negative number when a is ordered before b, zero when
