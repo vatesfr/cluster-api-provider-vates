@@ -3,17 +3,9 @@ kind: Cluster
 metadata:
   name: my-cluster
 spec:
-  clusterNetwork:
-    pods:
-      cidrBlocks:
-        - null
-    services:
-      cidrBlocks:
-        - null
-    serviceDomain: ""
   topology:
     classRef:
-      name: vates-rhel-from-scratch
+      name: vates-rhel-prefilled
     version: ""
     variables:
       - name: controlPlaneEndpoint
@@ -29,6 +21,6 @@ spec:
       replicas: 3
     workers:
       machineDeployments:
-        - class: worker-from-scratch
+        - class: worker-prefilled
           name: worker-md-0
           replicas: 2

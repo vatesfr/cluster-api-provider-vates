@@ -19,5 +19,3 @@ spec:
     matchLabels:
       cluster.x-k8s.io/control-plane: ""
       topology.cluster.x-k8s.io/owned: ""
-  remediation:
-    maxInFlight: 1

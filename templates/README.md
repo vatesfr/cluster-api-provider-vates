@@ -34,17 +34,41 @@ Once the template is ready, note its **UUID** (templateID) and your **pool UUID*
 
 ```
 templates/
-├── clusterclass/                        # ClusterClass + non-machine templates
-│   ├── kustomization.yaml
-│   ├── rhel-xoclustertemplate.yaml      # shared XOClusterTemplate
-│   ├── from-scratch/                    # full bootstrap (dnf install kubelet...)
-│   └── prefilled/                       # pre-baked image (minimal bootstrap)
-├── machinetemplates/                    # XOMachineTemplate (edit per environment)
-│   ├── from-scratch/
-│   └── prefilled/
-├── example-cluster/                     # Cluster scaffold + CP MachineHealthCheck
-└── clusterctl/                          # clusterctl-compatible template
+├── kubeadm/                             # kubeadm bootstrap flow (default)
+│   ├── base/                            # community templates — placeholders
+│   │   ├── clusterclass/                # ClusterClass + non-machine templates
+│   │   │   ├── kustomization.yaml
+│   │   │   ├── rhel-xoclustertemplate.yaml  # shared XOClusterTemplate
+│   │   │   ├── from-scratch/            # full bootstrap (dnf install kubelet...)
+│   │   │   └── prefilled/               # pre-baked image (minimal bootstrap)
+│   │   ├── machinetemplates/            # XOMachineTemplate (edit per environment)
+│   │   │   ├── from-scratch/
+│   │   │   └── prefilled/
+│   │   ├── example-cluster/             # Cluster scaffold + CP MachineHealthCheck
+│   │   ├── clusterctl/                  # clusterctl-compatible template (kubeadm)
+│   │   └── kustomization.yaml
+│   ├── overlays/                        # per-environment values (not distributed)
+│   │   └── cogent1/                     # local example — real UUIDs, VIP
+│   └── packer/                          # AlmaLinux cloud image builder
+├── talos/                               # Talos bootstrap flow
+│   ├── base/                            # community templates — placeholders
+│   ├── overlays/                        # per-environment values (not distributed)
+│   │   └── cogent1/                     # local example — real UUIDs, VIP
+│   └── kustomization.yaml
+└── README.md
 ```
+
+Two bootstrap flows are supported, one per top-level directory. Each flow follows
+a `base/` + `overlays/` layout:
+
+- **kubeadm** (default): `kubeadm/base/clusterclass/` + `kubeadm/base/machinetemplates/` +
+  `kubeadm/base/example-cluster/` with `KubeadmControlPlane` and cloud-init. See below.
+- **Talos** : `talos/base/` (community, placeholders) + `talos/overlays/`
+  (per-environment values) with `TalosControlPlane` + `TalosConfigTemplate` on
+  an immutable, `nocloud` Talos image. See `talos/README.md`.
+
+> The `overlays/` directories contain environment-specific UUIDs (and are
+> git-ignored) — **not** intended for distribution. Use `base/` for community usage.
 
 ## Workflows
 
@@ -54,17 +78,17 @@ Apply the ClusterClass and templates once (they are cluster-scoped):
 
 ```bash
 # 1. ClusterClass + control plane/bootstrap templates
-kubectl apply -k templates/clusterclass/
+kubectl apply -k templates/kubeadm/base/clusterclass/
 
 # 2. Machine templates (edit templateID/poolID/network first)
-kubectl apply -k templates/machinetemplates/
+kubectl apply -k templates/kubeadm/base/machinetemplates/
 ```
 
 Then create a cluster:
 
 ```bash
-# 3. Customise templates/example-cluster/capi-cluster.yaml first
-kubectl apply -k templates/example-cluster/
+# 3. Customise templates/kubeadm/base/example-cluster/capi-cluster.yaml first
+kubectl apply -k templates/kubeadm/base/example-cluster/
 ```
 
 ### Option B — clusterctl generate cluster (distribution)
@@ -78,14 +102,14 @@ export VM_NAME_PREFIX=my-cluster
 export KUBERNETES_VERSION=v1.36.0
 
 clusterctl generate cluster my-cluster \
-  --from templates/clusterctl/cluster-template.yaml \
+  --from templates/kubeadm/base/clusterctl/cluster-template.yaml \
   | kubectl apply -f -
 ```
 
 ## Customising for your Xen Orchestra environment
 
 Before applying the machine templates, update the following fields in
-`templates/machinetemplates/` to match your XO pool:
+`templates/kubeadm/base/machinetemplates/` to match your XO pool:
 
 | Field | Description |
 |---|---|

@@ -13,7 +13,7 @@ Two ClusterClass variants for **AlmaLinux 10 / RHEL-like** nodes :
 ## Apply once (cluster-scoped)
 
 ```bash
-kubectl apply -k templates/clusterclass/
+kubectl apply -k templates/kubeadm/base/clusterclass/
 ```
 
 This registers the ClusterClass and all referenced templates
