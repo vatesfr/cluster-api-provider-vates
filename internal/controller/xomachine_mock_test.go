@@ -254,6 +254,67 @@ var _ = Describe("Reconcile", func() {
 			Expect(*updated.Status.ProviderID).NotTo(BeEmpty())
 		})
 
+		It("creates the VM with Talos bootstrap data passthrough", func() {
+			vmUUID := uuid.Must(uuid.NewV4())
+			poolUUID := uuid.Must(uuid.NewV4())
+			templateUUID := uuid.Must(uuid.NewV4())
+			talosData := "version: v1alpha1\nmachine:\n  type: controlplane\n"
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&infrastructurev1beta2.XOMachine{}).WithObjects(
+				&infrastructurev1beta2.XOMachine{
+					ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+					Spec: infrastructurev1beta2.XOMachineSpec{
+						TemplateID:        templateUUID.String(),
+						PoolID:            poolUUID.String(),
+						NamePrefix:        "test",
+						BootstrapData:     talosData,
+						BootstrapProvider: "talos",
+					},
+				},
+			).Build()
+
+			r = &XOMachineReconciler{
+				Client: fakeClient,
+				Scheme: scheme,
+				newClientFunc: func(_ context.Context, _ *xok8scommon.XoConfig) (*xok8scommon.XoClient, error) {
+					return &xok8scommon.XoClient{Client: mockLib}, nil
+				},
+			}
+
+			// GetCurrentUser should NOT be called for Talos (no SSH key injection, no cloud-config build)
+			mockVM.EXPECT().
+				Create(gomock.Any(), poolUUID, gomock.Any()).
+				DoAndReturn(func(_ context.Context, _ uuid.UUID, params *payloads.CreateVMParams) (*payloads.VM, error) {
+					Expect(params.CloudConfig).NotTo(BeNil())
+					Expect(*params.CloudConfig).To(Equal(talosData))
+					return &payloads.VM{
+						ID:         vmUUID,
+						NameLabel:  "test",
+						PowerState: payloads.PowerStateRunning,
+					}, nil
+				})
+
+			mockVM.EXPECT().
+				GetByID(gomock.Any(), vmUUID).
+				Return(&payloads.VM{
+					ID:            vmUUID,
+					NameLabel:     "test",
+					PowerState:    payloads.PowerStateRunning,
+					MainIpAddress: "192.168.1.42",
+				}, nil)
+
+			result, err := r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+
+			updated := &infrastructurev1beta2.XOMachine{}
+			err = r.Get(ctx, types.NamespacedName{Name: "test", Namespace: "default"}, updated)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated.Status.Ready).To(BeTrue())
+		})
+
 		It("requeues when the VM started but has no IP yet", func() {
 			vmUUID := uuid.Must(uuid.NewV4())
 			poolUUID := uuid.Must(uuid.NewV4())

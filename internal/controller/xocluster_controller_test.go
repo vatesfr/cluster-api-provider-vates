@@ -22,10 +22,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
 	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 )
@@ -80,5 +84,59 @@ var _ = Describe("XOCluster Controller", func() {
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
 		})
+	})
+})
+
+var _ = Describe("ensureClusterNameLabel", func() {
+	var (
+		scheme *runtime.Scheme
+		ctx    context.Context
+		r      *XOClusterReconciler
+	)
+
+	BeforeEach(func() {
+		scheme = runtime.NewScheme()
+		Expect(clusterv1.AddToScheme(scheme)).To(Succeed())
+		ctx = context.Background()
+		r = &XOClusterReconciler{}
+	})
+
+	It("adds the cluster-name label when the Cluster has no labels", func() {
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			&clusterv1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "default"},
+			},
+		).Build()
+		r.Client = fakeClient
+
+		cluster := &clusterv1.Cluster{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "my-cluster"}, cluster)).To(Succeed())
+		Expect(r.ensureClusterNameLabel(ctx, cluster)).To(Succeed())
+
+		updated := &clusterv1.Cluster{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "my-cluster"}, updated)).To(Succeed())
+		Expect(updated.Labels[clusterv1.ClusterNameLabel]).To(Equal("my-cluster"))
+	})
+
+	It("is a no-op when the label already matches the Cluster name", func() {
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			&clusterv1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-cluster",
+					Namespace: "default",
+					Labels:    map[string]string{clusterv1.ClusterNameLabel: "my-cluster"},
+				},
+			},
+		).Build()
+		r.Client = fakeClient
+
+		cluster := &clusterv1.Cluster{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "my-cluster"}, cluster)).To(Succeed())
+		Expect(r.ensureClusterNameLabel(ctx, cluster)).To(Succeed())
+
+		updated := &clusterv1.Cluster{}
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "my-cluster"}, updated)).To(Succeed())
+		Expect(updated.Labels[clusterv1.ClusterNameLabel]).To(Equal("my-cluster"))
+		Expect(updated.ResourceVersion).To(Equal(cluster.ResourceVersion))
 	})
 })
