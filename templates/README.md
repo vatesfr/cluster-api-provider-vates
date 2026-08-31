@@ -48,12 +48,12 @@ templates/
 │   │   ├── clusterctl/                  # clusterctl-compatible template (kubeadm)
 │   │   └── kustomization.yaml
 │   ├── overlays/                        # per-environment values (not distributed)
-│   │   └── cogent1/                     # local example — real UUIDs, VIP
+│   │   └── lab1/                        # local example — real UUIDs, VIP
 │   └── packer/                          # AlmaLinux cloud image builder
 ├── talos/                               # Talos bootstrap flow
 │   ├── base/                            # community templates — placeholders
 │   ├── overlays/                        # per-environment values (not distributed)
-│   │   └── cogent1/                     # local example — real UUIDs, VIP
+│   │   └── lab1/                        # local example — real UUIDs, VIP
 │   └── kustomization.yaml
 └── README.md
 ```

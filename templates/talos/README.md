@@ -22,13 +22,13 @@ talos/
 │   ├── talos-configtemplate.yaml
 │   └── talos-machinedeployment.yaml
 └── overlays/
-    └── cogent1/          # Local environment example — real UUIDs, not distributed
+    └── lab1/             # Local environment example — real UUIDs, not distributed
 ```
 
 `base/` is the community artifact: it uses placeholders
 (`<your-xo-talos-template-uuid>`, `<your-xo-pool-uuid>`, `<your-xo-network-uuid>`,
 `<your-cp-vip>`) and contains **no** environment-specific resource IDs.
-`overlays/` holds per-environment overrides (e.g. `cogent1/` with the actual
+`overlays/` holds per-environment overrides (e.g. `lab1/` with the actual
 UUIDs) and is meant for local testing only.
 
 ## Prerequisites
