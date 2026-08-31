@@ -102,7 +102,7 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
-	"$(GOLANGCI_LINT)" config verify
+	"$(GOLANGCI_LINT)" config verify --schema hack/golangci.v2.11.jsonschema.json
 
 ##@ Build
 
