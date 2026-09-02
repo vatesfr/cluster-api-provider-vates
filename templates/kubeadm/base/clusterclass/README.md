@@ -1,7 +1,7 @@
 # ClusterClass Templates
 
 **Prerequisite:** VM templates must be **cloud-init ready** (NoCloud datasource)
-with **XE guest tools** installed. See `templates/README.md` for details.
+with **XE guest tools** installed.
 
 Two ClusterClass variants for **AlmaLinux 10 / RHEL-like** nodes :
 

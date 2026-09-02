@@ -21,37 +21,102 @@ kubectl create secret generic xo-credentials -n capi-system \
   --from-literal=insecure="true"
 ```
 
-### Template requirements
+### ClusterClass and machine templates
 
-All templates must have **cloud-init** support enabled and **Xen guest tools** installed and running.
+All VM templates must have **cloud-init** support enabled and **Xen guest tools**
+installed and running. Two ClusterClass variants are provided:
 
-Two ClusterClass variants are provided:
+- **`prefilled`** — for templates that already have kubelet, kubeadm, containerd,
+  kube-vip, and Cilium images pre-installed.
+- **`from-scratch`** — for minimal templates (just containerd + Xen guest tools).
+  The ClusterClass handles installing everything via `preKubeadmCommands`.
 
-- **`prefilled`** — for templates that already have kubelet, kubeadm, containerd, kube-vip, and Cilium images pre-installed. Edit `templates/kubeadm/base/machinetemplates/prefilled/`.
-- **`from-scratch`** — for minimal templates (just containerd + Xen guest tools). The ClusterClass handles installing everything via `preKubeadmCommands`. Edit `templates/kubeadm/base/machinetemplates/from-scratch/`.
+Note: TemplateID is without PoolID in it and must be bootable.
 
-
-Edit the matching `VatesMachineTemplate` files to set your `templateID`, `poolID`, and network name.
-
-Note: TemplateID is without PoolID in it and must be bootable
+Deploy the ClusterClass (once, it is cluster-scoped):
 
 ```bash
-# 4. Deploy ClusterClass + machine templates
 kubectl apply -k templates/kubeadm/base/clusterclass/
-
-# Choose only one:
-# For prefilled machine templates
-kubectl apply -k templates/kubeadm/base/machinetemplates/prefilled/
-# For from scratch machine templates
-kubectl apply -k templates/kubeadm/base/machinetemplates/from-scratch
 ```
 
-Edit the example, then apply:
+The `templates/kubeadm/base/` templates use placeholders and must **not** be
+edited directly. Instead, create an **overlay** to hold your environment's
+values (real template/pool/network UUIDs, control plane endpoint).
+
+Create a directory for your environment with a `kustomization.yaml` that pulls
+in `base/` and patches each resource:
 
 ```
-# 5. Create a cluster
-kubectl apply -f templates/kubeadm/base/example-cluster/capi-cluster.yaml
+templates/kubeadm/overlays/my-env/
+├── kustomization.yaml
+├── patch-xomachinetemplate-cp.yaml        # templateID, poolID, networkID (CP)
+├── patch-xomachinetemplate-worker.yaml    # templateID, poolID, networkID (workers)
+└── patch-cluster.yaml                     # control plane endpoint + cluster topology
 ```
+
+Wherever a YAML contains a placeholder, replace it with your Xen Orchestra
+values: template ID, pool UUID, network UUID, control plane IP/port/subnet,
+machine prefix, and the number of replicas. Then apply your overlay:
+
+```bash
+kubectl apply -k templates/kubeadm/overlays/my-env/
+```
+
+See `templates/kubeadm/README.md` for the complete file contents.
+
+## Using with Talos
+
+The vates provider also supports [Talos Linux](https://www.talos.dev/) as an
+immutable, cloud-init-free alternative to kubeadm. The `TalosControlPlane` and
+`TalosConfig` CRDs come from the Talos bootstrap / control plane providers
+(CABPT / CACPPT). Install them alongside the vates provider:
+
+```bash
+clusterctl init --bootstrap talos --control-plane talos
+```
+
+> `dist/install.yaml` deploys the vates provider but **not** CAPI or the Talos
+> CRDs. If you install the vates provider this way, you must still run the
+> `clusterctl init` above for `TalosControlPlane` / `TalosConfig` to exist.
+> See `templates/talos/README.md` for both installation options.
+
+The default vates RBAC only binds the kubeadm control plane (KCP). For the Talos
+flow, grant the Talos providers (CACPPT / CABPT) access to the `XOMachineTemplate`
+resources:
+
+```bash
+kubectl apply -k config/rbac/talos
+```
+
+Prerequisites: a Talos VM template built for the **`nocloud`** platform with
+the `siderolabs/xen-guest-agent` extension, **never booted**, and with
+**`viridian: false`** in XO.
+
+The `templates/talos/base/` templates use placeholders and must **not** be
+edited directly. Instead, create an **overlay** to hold your environment's
+values (real UUIDs, VIP address, etc.).
+
+Create a directory for your environment with a `kustomization.yaml` that pulls
+in `base/` and patches each resource with your values:
+
+```
+templates/talos/overlays/my-env/
+├── kustomization.yaml
+├── patch-xomachinetemplate-cp.yaml        # templateID, poolID, networkID
+├── patch-xomachinetemplate-worker.yaml    # templateID, poolID, networkID
+├── patch-controlplane.yaml                # control plane VIP + machine config
+└── patch-xocluster.yaml                   # control plane endpoint
+```
+
+Wherever a YAML contains a `<your-...-uuid>` or `<your-cp-vip>` placeholder,
+replace it with your Xen Orchestra template ID, pool UUID, network UUID, and
+control plane VIP. Then apply:
+
+```bash
+kubectl apply -k templates/talos/overlays/my-env/
+```
+
+See `templates/talos/README.md` for the complete file contents.
 
 ## Development
 
@@ -73,12 +138,11 @@ make -f Makefile.dev restart  # Restart the controller pod
 ├── config/
 │   ├── crd/                       # Generated CRDs (DO NOT EDIT)
 │   ├── manager/                   # Manager Deployment
-│   ├── rbac/                      # Generated RBAC (DO NOT EDIT)
+│   ├── rbac/                      # RBAC: role.yaml generated (DO NOT EDIT), bindings/ + talos/ hand-written
 ├── templates/
 │   ├── kubeadm/                   # kubeadm cluster templates
-│   │   ├── clusterclass/          # ClusterClass + templates
-│   │   ├── machinetemplates/      # XOMachineTemplate (edit per env)
-│   │   ├── example-cluster/       # Complete cluster example
+│   │   ├── base/                  # ClusterClass + machinetemplates (placeholders)
+│   │   ├── overlays/              # per-environment values (create one)
 │   │   ├── clusterctl/            # Template for clusterctl generate
 │   │   └── packer/                # AlmaLinux cloud image builder
 │   ├── talos/                     # Talos cluster templates (base + overlays)
