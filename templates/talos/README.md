@@ -70,10 +70,10 @@ Then install all providers (CAPI core + Talos bootstrap/control plane + vates):
 clusterctl init --bootstrap talos --control-plane talos --infrastructure vates
 ```
 
-Verify the providers are registered:
+Verify the controllers are running:
 
 ```bash
-clusterctl get providers
+kubectl get deployment -n capi-system -l cluster.x-k8s.io/provider
 ```
 
 Check that the vates controller is running:
