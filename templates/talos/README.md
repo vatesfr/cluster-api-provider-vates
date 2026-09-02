@@ -47,49 +47,29 @@ The Talos VM template must be:
 
 ### Management cluster
 
-The Talos bootstrap provider (CABPT) and control plane provider (CACPPT) are
-known by `clusterctl` by default. Install all providers (CAPI core + Talos +
-vates) with a single command:
+The vates provider is not published to the network yet. You must configure a
+local file override **before** running `clusterctl init`.
 
-```bash
-clusterctl init --bootstrap talos --control-plane talos --infrastructure vates
-```
-
-### Local development override
-
-For local development, you can point `clusterctl` at a local build of the vates
-provider instead of pulling from the network. Create or edit
-`~/.config/cluster-api/clusterctl.yaml`:
-
-```yaml
-providers:
-  - name: vates
-    url: file:///path/to/your/local/infrastructure-components.yaml
-    type: InfrastructureProvider
-```
-
-Generate the file first if needed:
+Generate the provider manifest and create the clusterctl configuration:
 
 ```bash
 make release-manifests
 ```
 
-### Troubleshooting
-
-If `clusterctl init` fails with `target namespace can't be defaulted`, add
-explicit namespaces to the Talos providers in
-`~/.config/cluster-api/clusterctl.yaml`:
+Create `~/.config/cluster-api/clusterctl.yaml` (or append to it):
 
 ```yaml
 providers:
-  - name: "talos"
-    url: "https://github.com/siderolabs/cluster-api-bootstrap-provider-talos/releases/latest/bootstrap-components.yaml"
-    type: "BootstrapProvider"
-    namespace: "capi-system"
-  - name: "talos"
-    url: "https://github.com/siderolabs/cluster-api-control-plane-provider-talos/releases/latest/control-plane-components.yaml"
-    type: "ControlPlaneProvider"
-    namespace: "capi-system"
+  - name: vates
+    url: file:///path/to/cluster-api-provider-vates/dist/infrastructure-components.yaml
+    type: InfrastructureProvider
+```
+
+The Talos providers (CABPT / CACPPT) are known by `clusterctl` by default.
+Install everything (CAPI core + Talos bootstrap/control plane + vates):
+
+```bash
+clusterctl init --bootstrap talos --control-plane talos --infrastructure vates
 ```
 
 Verify the controllers are running:
