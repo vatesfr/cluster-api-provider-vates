@@ -47,10 +47,20 @@ The Talos VM template must be:
 
 ### Management cluster
 
-The vates provider is not published to the network yet. You must configure a
-local file override **before** running `clusterctl init`.
+The `TalosControlPlane` and `TalosConfig` CRDs are **not** provided by this
+repo — they come from the Talos control plane / bootstrap providers (CACPPT /
+CABPT), which install their CRDs into the management cluster. These are known
+by `clusterctl` by default. The vates infrastructure provider, however, is not
+published to the network yet and must be installed manually.
 
-Generate the provider manifest and create the clusterctl configuration:
+Two approaches:
+
+**Option A — everything via `clusterctl` (recommended)**
+
+The vates provider is not published to the network, so configure a local file
+override **before** running `clusterctl init`.
+
+Generate the provider manifest:
 
 ```bash
 make release-manifests
@@ -65,12 +75,30 @@ providers:
     type: InfrastructureProvider
 ```
 
-The Talos providers (CABPT / CACPPT) are known by `clusterctl` by default.
-Install everything (CAPI core + Talos bootstrap/control plane + vates):
+Then install CAPI core + Talos bootstrap/control plane + vates in one command:
 
 ```bash
 clusterctl init --bootstrap talos --control-plane talos --infrastructure vates
 ```
+
+**Option B — vates deployed via `install.yaml`**
+
+Install the CAPI core and the Talos providers with `clusterctl` (this is what
+installs the `TalosControlPlane` / `TalosConfig` CRDs):
+
+```bash
+clusterctl init --bootstrap talos --control-plane talos
+```
+
+Then deploy the vates infrastructure provider manually. The bundled
+`dist/install.yaml` contains everything (CRDs, RBAC, Deployment):
+
+```bash
+kubectl apply -f dist/install.yaml
+```
+
+> `dist/install.yaml` only deploys the vates provider — it does **not** install
+> CAPI or the Talos CRDs. Those must come from `clusterctl init` (Option A or B).
 
 Verify the controllers are running:
 

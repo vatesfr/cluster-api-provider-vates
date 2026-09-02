@@ -67,20 +67,22 @@ See `templates/kubeadm/README.md` for the complete file contents.
 ## Using with Talos
 
 The vates provider also supports [Talos Linux](https://www.talos.dev/) as an
-immutable, cloud-init-free alternative to kubeadm. Install the Talos bootstrap
-and control plane providers alongside the vates infrastructure provider:
+immutable, cloud-init-free alternative to kubeadm. The `TalosControlPlane` and
+`TalosConfig` CRDs come from the Talos bootstrap / control plane providers
+(CABPT / CACPPT). Install them alongside the vates provider:
 
 ```bash
-clusterctl init --bootstrap talos --control-plane talos --infrastructure vates
+clusterctl init --bootstrap talos --control-plane talos
 ```
+
+> `dist/install.yaml` deploys the vates provider but **not** CAPI or the Talos
+> CRDs. If you install the vates provider this way, you must still run the
+> `clusterctl init` above for `TalosControlPlane` / `TalosConfig` to exist.
+> See `templates/talos/README.md` for both installation options.
 
 Prerequisites: a Talos VM template built for the **`nocloud`** platform with
 the `siderolabs/xen-guest-agent` extension, **never booted**, and with
 **`viridian: false`** in XO.
-
-The vates provider is not published to the network yet — you must configure a
-local file override in `~/.config/cluster-api/clusterctl.yaml` before running
-`clusterctl init`. See `templates/talos/README.md` for the full steps.
 
 The `templates/talos/base/` templates use placeholders and must **not** be
 edited directly. Instead, create an **overlay** to hold your environment's
