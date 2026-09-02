@@ -47,8 +47,24 @@ The Talos VM template must be:
 
 ### Management cluster
 
-The Talos bootstrap and control plane providers must be installed alongside the
-vates infrastructure provider:
+The Talos bootstrap and control plane providers (CABPT / CACPPT) are not
+registered by default in `clusterctl`. You must add them to your clusterctl
+configuration before running `init`.
+
+Add the following to `~/.cluster-api/clusterctl.yaml` (create the file if it
+does not exist):
+
+```yaml
+providers:
+  - name: "talos"
+    url: "https://github.com/siderolabs/cluster-api-bootstrap-provider-talos/releases/latest/bootstrap-components.yaml"
+    type: "BootstrapProvider"
+  - name: "talos"
+    url: "https://github.com/siderolabs/cluster-api-control-plane-provider-talos/releases/latest/control-plane-components.yaml"
+    type: "ControlPlaneProvider"
+```
+
+Then install all providers (CAPI core + Talos bootstrap/control plane + vates):
 
 ```bash
 clusterctl init --bootstrap talos --control-plane talos --infrastructure vates
