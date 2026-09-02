@@ -79,8 +79,9 @@ the `siderolabs/xen-guest-agent` extension, **never booted**, and with
 **`viridian: false`** in XO.
 
 The Talos providers (CABPT / CACPPT) are known by `clusterctl` by default.
-See `templates/talos/README.md` for the full installation and troubleshooting
-steps.
+For local development, add a vates provider override to
+`~/.config/cluster-api/clusterctl.yaml` — see `templates/talos/README.md`
+for the full installation and troubleshooting steps.
 
 The `templates/talos/base/` templates use placeholders and must **not** be
 edited directly. Instead, create an **overlay** to hold your environment's

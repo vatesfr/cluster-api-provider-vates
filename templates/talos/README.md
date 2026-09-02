@@ -55,8 +55,30 @@ vates) with a single command:
 clusterctl init --bootstrap talos --control-plane talos --infrastructure vates
 ```
 
-If the command fails with `target namespace can't be defaulted`, create
-`~/.cluster-api/clusterctl.yaml` with an explicit namespace:
+### Local development override
+
+For local development, you can point `clusterctl` at a local build of the vates
+provider instead of pulling from the network. Create or edit
+`~/.config/cluster-api/clusterctl.yaml`:
+
+```yaml
+providers:
+  - name: vates
+    url: file:///path/to/your/local/infrastructure-components.yaml
+    type: InfrastructureProvider
+```
+
+Generate the file first if needed:
+
+```bash
+make release-manifests
+```
+
+### Troubleshooting
+
+If `clusterctl init` fails with `target namespace can't be defaulted`, add
+explicit namespaces to the Talos providers in
+`~/.config/cluster-api/clusterctl.yaml`:
 
 ```yaml
 providers:
