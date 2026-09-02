@@ -67,6 +67,9 @@ a `base/` + `overlays/` layout:
   (per-environment values) with `TalosControlPlane` + `TalosConfigTemplate` on
   an immutable, `nocloud` Talos image.
 
+> The Talos flow also needs the Talos RBAC binding (it is not part of the
+> default install): `kubectl apply -k config/rbac/talos`. See `talos/README.md`.
+
 > The `overlays/` directories contain environment-specific UUIDs (and are
 > git-ignored) — **not** intended for distribution. Use `base/` for community usage.
 

@@ -100,6 +100,20 @@ kubectl apply -f dist/install.yaml
 > `dist/install.yaml` only deploys the vates provider — it does **not** install
 > CAPI or the Talos CRDs. Those must come from `clusterctl init` (Option A or B).
 
+### Apply the Talos RBAC binding
+
+The default vates RBAC only binds the kubeadm control plane (KCP). For the Talos
+flow, the control plane (CACPPT) and bootstrap (CABPT) providers need access to
+the `XOMachineTemplate` resources. This binding is **not** included by default;
+apply it separately:
+
+```bash
+kubectl apply -k config/rbac/talos
+```
+
+Without it, the Talos control plane cannot read `XOMachineTemplate` and no
+control plane Machine is created.
+
 Verify the controllers are running:
 
 ```bash

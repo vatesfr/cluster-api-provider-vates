@@ -80,6 +80,14 @@ clusterctl init --bootstrap talos --control-plane talos
 > `clusterctl init` above for `TalosControlPlane` / `TalosConfig` to exist.
 > See `templates/talos/README.md` for both installation options.
 
+The default vates RBAC only binds the kubeadm control plane (KCP). For the Talos
+flow, grant the Talos providers (CACPPT / CABPT) access to the `XOMachineTemplate`
+resources:
+
+```bash
+kubectl apply -k config/rbac/talos
+```
+
 Prerequisites: a Talos VM template built for the **`nocloud`** platform with
 the `siderolabs/xen-guest-agent` extension, **never booted**, and with
 **`viridian: false`** in XO.
@@ -130,7 +138,7 @@ make -f Makefile.dev restart  # Restart the controller pod
 ├── config/
 │   ├── crd/                       # Generated CRDs (DO NOT EDIT)
 │   ├── manager/                   # Manager Deployment
-│   ├── rbac/                      # Generated RBAC (DO NOT EDIT)
+│   ├── rbac/                      # RBAC: role.yaml generated (DO NOT EDIT), bindings/ + talos/ hand-written
 ├── templates/
 │   ├── kubeadm/                   # kubeadm cluster templates
 │   │   ├── base/                  # ClusterClass + machinetemplates (placeholders)
