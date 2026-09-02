@@ -41,19 +41,19 @@ templates/
 │   │   │   ├── rhel-xoclustertemplate.yaml  # shared XOClusterTemplate
 │   │   │   ├── from-scratch/            # full bootstrap (dnf install kubelet...)
 │   │   │   └── prefilled/               # pre-baked image (minimal bootstrap)
-│   │   ├── machinetemplates/            # XOMachineTemplate (edit per environment)
+│   │   ├── machinetemplates/            # XOMachineTemplate (placeholders)
 │   │   │   ├── from-scratch/
 │   │   │   └── prefilled/
 │   │   ├── example-cluster/             # Cluster scaffold + CP MachineHealthCheck
 │   │   ├── clusterctl/                  # clusterctl-compatible template (kubeadm)
 │   │   └── kustomization.yaml
 │   ├── overlays/                        # per-environment values (not distributed)
-│   │   └── lab1/                        # local example — real UUIDs, VIP
+│   │   └── <your-env>/                  # create one per environment
 │   └── packer/                          # AlmaLinux cloud image builder
 ├── talos/                               # Talos bootstrap flow
 │   ├── base/                            # community templates — placeholders
 │   ├── overlays/                        # per-environment values (not distributed)
-│   │   └── lab1/                        # local example — real UUIDs, VIP
+│   │   └── <your-env>/                  # create one per environment
 │   └── kustomization.yaml
 └── README.md
 ```
@@ -65,30 +65,31 @@ a `base/` + `overlays/` layout:
   `kubeadm/base/example-cluster/` with `KubeadmControlPlane` and cloud-init. See below.
 - **Talos** : `talos/base/` (community, placeholders) + `talos/overlays/`
   (per-environment values) with `TalosControlPlane` + `TalosConfigTemplate` on
-  an immutable, `nocloud` Talos image. See `talos/README.md`.
+  an immutable, `nocloud` Talos image.
 
 > The `overlays/` directories contain environment-specific UUIDs (and are
 > git-ignored) — **not** intended for distribution. Use `base/` for community usage.
 
 ## Workflows
 
+> `base/` templates use placeholders and must **not** be edited directly.
+> Always create an **overlay** to provide your environment's values — this
+> keeps `base/` reusable and avoids committing environment-specific UUIDs.
+> See `kubeadm/README.md` and `talos/README.md` for the complete file contents
+> of each overlay.
+
 ### Option A — kubectl apply -k (development)
 
-Apply the ClusterClass and templates once (they are cluster-scoped):
+Deploy the ClusterClass once (it is cluster-scoped), then apply your overlay
+which references `base/` and patches the resource IDs:
 
 ```bash
-# 1. ClusterClass + control plane/bootstrap templates
+# 1. ClusterClass + control plane/bootstrap templates (once)
 kubectl apply -k templates/kubeadm/base/clusterclass/
 
-# 2. Machine templates (edit templateID/poolID/network first)
-kubectl apply -k templates/kubeadm/base/machinetemplates/
-```
-
-Then create a cluster:
-
-```bash
-# 3. Customise templates/kubeadm/base/example-cluster/capi-cluster.yaml first
-kubectl apply -k templates/kubeadm/base/example-cluster/
+# 2. Create an overlay under templates/kubeadm/overlays/<your-env>/
+#    (see kubeadm/README.md), then apply it
+kubectl apply -k templates/kubeadm/overlays/my-env/
 ```
 
 ### Option B — clusterctl generate cluster (distribution)
@@ -108,8 +109,9 @@ clusterctl generate cluster my-cluster \
 
 ## Customising for your Xen Orchestra environment
 
-Before applying the machine templates, update the following fields in
-`templates/kubeadm/base/machinetemplates/` to match your XO pool:
+Instead of editing `base/`, put your environment-specific values in an overlay
+under `templates/kubeadm/overlays/<your-env>/`. The patches override the
+following fields:
 
 | Field | Description |
 |---|---|
@@ -117,6 +119,8 @@ Before applying the machine templates, update the following fields in
 | `spec.template.spec.networkConfig.networks[].name` | XO network name (alternative — resolved via V1 client if UUID is unknown) |
 | `spec.template.spec.templateID` | UUID of the VM template |
 | `spec.template.spec.poolID` | UUID of your Xen Orchestra pool |
+| `spec.topology.classRef.name` | ClusterClass variant to use (`vates-rhel-prefilled` or `vates-rhel-from-scratch`) |
+| `spec.topology.variables` | Control plane endpoint, VM name prefix, load balancer, replicas |
 | `HARBOR_HOST` (env var) | Hostname of your Harbor registry (e.g. `10.30.139.100`). Set before running `make` in `packer/` to enable containerd registry mirrors. Leave unset to pull directly from upstream. |
 | `HARBOR_CA_PATH` (env var) | Path to the Harbor CA certificate file (PEM). Required if Harbor uses a self-signed cert. Copy your Harbor CA PEM to a known path and set this variable before running `packer build`. Example: `export HARBOR_CA_PATH=/etc/pki/harbor-ca.crt`. If unset, the script skips CA installation (mirrors still work if Harbor uses a publicly-trusted CA). |
 
