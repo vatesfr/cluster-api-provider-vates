@@ -78,9 +78,9 @@ Prerequisites: a Talos VM template built for the **`nocloud`** platform with
 the `siderolabs/xen-guest-agent` extension, **never booted**, and with
 **`viridian: false`** in XO.
 
-The Talos providers (CABPT / CACPPT) are not known by `clusterctl` by default.
-Register them in `~/.cluster-api/clusterctl.yaml` before running `init` — see
-`templates/talos/README.md` for the full provider URLs.
+The Talos providers (CABPT / CACPPT) are known by `clusterctl` by default.
+See `templates/talos/README.md` for the full installation and troubleshooting
+steps.
 
 The `templates/talos/base/` templates use placeholders and must **not** be
 edited directly. Instead, create an **overlay** to hold your environment's
