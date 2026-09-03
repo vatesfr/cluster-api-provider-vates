@@ -1,0 +1,219 @@
+# Required variables (export in environment):
+#   CP_VIP          - Talos shared control plane VIP (e.g. 10.30.139.10)
+#   CP_SUBNET       - CIDR subnet mask for the VIP (e.g. 16, 24)
+#   VM_NAME_PREFIX  - Prefix for VM names (e.g. my-cluster)
+#   KUBERNETES_VERSION - Kubernetes version (e.g. v1.36.1)
+#   TALOS_VERSION   - Talos version (e.g. v1.13.9)
+#   XO_TEMPLATE_UUID - UUID of the Talos nocloud template (viridian=false)
+#   XO_POOL_UUID    - UUID of your Xen Orchestra pool
+#   XO_NETWORK_UUID - UUID of your Xen Orchestra network
+#
+# Optional variables (clusterctl built-in defaults — not the base/ replicas):
+#   CLUSTER_NAME                - Cluster name (default: name argument)
+#   NAMESPACE                   - Target namespace (default: current namespace)
+#   CONTROL_PLANE_MACHINE_COUNT - Control plane replicas (default: 1)
+#   WORKER_MACHINE_COUNT        - Worker replicas (default: 0)
+#
+# To match base/ (3 control plane, 2 workers), pass the flags:
+#   --control-plane-machine-count 3 --worker-machine-count 2
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - 172.31.0.0/16
+    services:
+      cidrBlocks:
+        - 192.168.0.0/16
+    serviceDomain: cluster.local
+  controlPlaneRef:
+    apiGroup: controlplane.cluster.x-k8s.io
+    kind: TalosControlPlane
+    name: ${CLUSTER_NAME}-cp
+  infrastructureRef:
+    apiGroup: vates.infrastructure.cluster.x-k8s.io
+    kind: XOCluster
+    name: ${CLUSTER_NAME}
+---
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOCluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  controlPlaneEndpoint:
+    host: ${CP_VIP}
+    port: 6443
+    subnet: ${CP_SUBNET}
+  injectSSHKeys: false
+---
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-cp
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      bootstrapProvider: talos
+      namePrefix: ${VM_NAME_PREFIX}-cp
+      templateID: ${XO_TEMPLATE_UUID}
+      poolID: ${XO_POOL_UUID}
+      resourceSet:
+        cpus: 4
+        memory: 8Gi
+        diskSize: 40Gi
+      networkConfig:
+        networks:
+          - networkID: ${XO_NETWORK_UUID}
+---
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      bootstrapProvider: talos
+      namePrefix: ${VM_NAME_PREFIX}-worker
+      templateID: ${XO_TEMPLATE_UUID}
+      poolID: ${XO_POOL_UUID}
+      resourceSet:
+        cpus: 4
+        memory: 8Gi
+        diskSize: 40Gi
+      networkConfig:
+        networks:
+          - networkID: ${XO_NETWORK_UUID}
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1alpha3
+kind: TalosControlPlane
+metadata:
+  name: ${CLUSTER_NAME}-cp
+  namespace: ${NAMESPACE}
+spec:
+  version: ${KUBERNETES_VERSION}
+  replicas: ${CONTROL_PLANE_MACHINE_COUNT}
+  infrastructureTemplate:
+    kind: XOMachineTemplate
+    apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+    name: ${CLUSTER_NAME}-cp
+  controlPlaneConfig:
+    controlplane:
+      generateType: controlplane
+      strategicPatches:
+        - |
+          machine:
+            time:
+              servers:
+                - time.cloudflare.com
+                - pool.ntp.org
+            kubelet:
+              extraArgs:
+                cloud-provider: external
+            network:
+              interfaces:
+                - interface: eth0
+                  dhcp: true
+                  vip:
+                    ip: ${CP_VIP}
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1alpha3
+kind: TalosConfigTemplate
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      generateType: join
+      strategicPatches:
+        - |
+          machine:
+            time:
+              servers:
+                - time.cloudflare.com
+                - pool.ntp.org
+            kubelet:
+              extraArgs:
+                cloud-provider: external
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineDeployment
+metadata:
+  name: ${CLUSTER_NAME}-worker-md-0
+  namespace: ${NAMESPACE}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  replicas: ${WORKER_MACHINE_COUNT}
+  template:
+    spec:
+      clusterName: ${CLUSTER_NAME}
+      version: ${KUBERNETES_VERSION}
+      bootstrap:
+        configRef:
+          apiGroup: bootstrap.cluster.x-k8s.io
+          kind: TalosConfigTemplate
+          name: ${CLUSTER_NAME}-worker
+      infrastructureRef:
+        apiGroup: vates.infrastructure.cluster.x-k8s.io
+        kind: XOMachineTemplate
+        name: ${CLUSTER_NAME}-worker
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: ${CLUSTER_NAME}-cp
+  namespace: ${NAMESPACE}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  checks:
+    nodeStartupTimeoutSeconds: 600
+    unhealthyNodeConditions:
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/control-plane: ""
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 1
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  checks:
+    nodeStartupTimeoutSeconds: 600
+    unhealthyNodeConditions:
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/deployment-name: ${CLUSTER_NAME}-worker-md-0
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 1

@@ -13,14 +13,10 @@ bootstrap provider.
 ```
 talos/
 ├── base/                 # Community templates — placeholders, no resource IDs
-│   ├── kustomization.yaml
-│   ├── talos-cluster.yaml
-│   ├── talos-xocluster.yaml
-│   ├── talos-xomachinetemplate-cp.yaml
-│   ├── talos-xomachinetemplate-worker.yaml
-│   ├── talos-controlplane.yaml
-│   ├── talos-configtemplate.yaml
-│   └── talos-machinedeployment.yaml
+│   ├── machinetemplates/ # XOMachineTemplate (control plane / worker)
+│   ├── example-cluster/  # Cluster scaffold + MachineHealthChecks
+│   ├── clusterctl/       # clusterctl-compatible template (distribution)
+│   └── kustomization.yaml
 └── overlays/             # Per-environment values (git-ignored, not distributed)
     └── <your-env>/       # Your environment — create one, see "Create an overlay"
 ```
@@ -30,6 +26,11 @@ talos/
 `<your-cp-vip>`) and contains **no** environment-specific resource IDs.
 `overlays/` holds per-environment overrides and is meant for local testing only.
 Create your own overlay directory (e.g. `my-env/`); do not edit `base/`.
+
+The layout mirrors the kubeadm templates (`templates/kubeadm/`). Unlike kubeadm,
+Talos has no `clusterclass/` directory: the Talos control plane provider (CACPPT)
+does not support ClusterClass / managed topology yet, so these are flat
+(`TalosControlPlane` + `MachineDeployment`) templates.
 
 ## Prerequisites
 
@@ -268,6 +269,40 @@ Apply your overlay:
 ```bash
 kubectl apply -k templates/talos/overlays/my-env/
 ```
+
+### Alternative — clusterctl generate
+
+For distribution or one-off clusters, use `clusterctl generate` instead of an
+overlay:
+
+```bash
+export CP_VIP=<your-cp-vip>
+export CP_SUBNET=<your-subnet-cidr-bits>
+export VM_NAME_PREFIX=<your-vm-name-prefix>
+export KUBERNETES_VERSION=v1.36.1
+export TALOS_VERSION=v1.13.9
+export XO_TEMPLATE_UUID=<your-xo-talos-template-uuid>
+export XO_POOL_UUID=<your-xo-pool-uuid>
+export XO_NETWORK_UUID=<your-xo-network-uuid>
+
+clusterctl generate cluster my-cluster \
+  --from templates/talos/base/clusterctl/cluster-template.yaml \
+  | kubectl apply -f -
+```
+
+`CONTROL_PLANE_MACHINE_COUNT` and `WORKER_MACHINE_COUNT` are clusterctl
+built-in flags that **default to 1 and 0** (not the `base/` replicas). To match
+the base templates (3 control plane, 2 workers), pass them explicitly:
+
+```bash
+clusterctl generate cluster my-cluster \
+  --from templates/talos/base/clusterctl/cluster-template.yaml \
+  --control-plane-machine-count 3 --worker-machine-count 2 \
+  | kubectl apply -f -
+```
+
+See `templates/talos/base/clusterctl/cluster-template.yaml` for the full list
+of supported variables.
 
 Then monitor:
 

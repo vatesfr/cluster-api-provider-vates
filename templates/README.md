@@ -52,6 +52,10 @@ templates/
 │   └── packer/                          # AlmaLinux cloud image builder
 ├── talos/                               # Talos bootstrap flow
 │   ├── base/                            # community templates — placeholders
+│   │   ├── machinetemplates/            # XOMachineTemplate (control plane / worker)
+│   │   ├── example-cluster/             # Cluster scaffold + MachineHealthChecks
+│   │   ├── clusterctl/                  # clusterctl-compatible template (Talos)
+│   │   └── kustomization.yaml
 │   ├── overlays/                        # per-environment values (not distributed)
 │   │   └── <your-env>/                  # create one per environment
 │   └── kustomization.yaml
@@ -65,7 +69,10 @@ a `base/` + `overlays/` layout:
   `kubeadm/base/example-cluster/` with `KubeadmControlPlane` and cloud-init. See below.
 - **Talos** : `talos/base/` (community, placeholders) + `talos/overlays/`
   (per-environment values) with `TalosControlPlane` + `TalosConfigTemplate` on
-  an immutable, `nocloud` Talos image.
+  an immutable, `nocloud` Talos image. Its `base/` mirrors the kubeadm layout
+  (`machinetemplates/`, `example-cluster/`, `clusterctl/`) but has no
+  `clusterclass/`: the Talos control plane provider does not support
+  ClusterClass / managed topology yet, so these are flat templates.
 
 > The Talos flow also needs the Talos RBAC binding (it is not part of the
 > default install): `kubectl apply -k config/rbac/talos`. See `talos/README.md`.
@@ -124,6 +131,13 @@ kubectl apply -k templates/kubeadm/overlays/my-env/
 
 ### Option B — clusterctl generate cluster (distribution)
 
+For distribution or one-off clusters, `clusterctl generate cluster` substitutes
+the `${...}` variables in a `cluster-template.yaml` and prints the manifests to
+pipe into `kubectl apply`. Each bootstrap flow ships its own template under
+`<flow>/base/clusterctl/`.
+
+**kubeadm** (ClusterClass, cloud-init):
+
 ```bash
 export CP_HOST=10.30.139.10
 export CP_PORT=6443
@@ -136,6 +150,32 @@ clusterctl generate cluster my-cluster \
   --from templates/kubeadm/base/clusterctl/cluster-template.yaml \
   | kubectl apply -f -
 ```
+
+**Talos** (flat, immutable OS):
+
+```bash
+export CP_VIP=10.30.139.10
+export CP_SUBNET=16
+export VM_NAME_PREFIX=my-cluster
+export KUBERNETES_VERSION=v1.36.1
+export TALOS_VERSION=v1.13.9
+export XO_TEMPLATE_UUID=<your-xo-talos-template-uuid>
+export XO_POOL_UUID=<your-xo-pool-uuid>
+export XO_NETWORK_UUID=<your-xo-network-uuid>
+
+clusterctl generate cluster my-cluster \
+  --from templates/talos/base/clusterctl/cluster-template.yaml \
+  | kubectl apply -f -
+```
+
+Both templates embed the control plane and worker `MachineHealthChecks`, so
+killed/unhealthy machines are remediated automatically. See the variables
+documented at the top of each `cluster-template.yaml`, and the per-flow
+READMEs (`templates/kubeadm/README.md`, `templates/talos/README.md`).
+
+> `CONTROL_PLANE_MACHINE_COUNT` / `WORKER_MACHINE_COUNT` default to `1` / `0`
+> (clusterctl built-ins). To match the `base/` replicas, pass
+> `--control-plane-machine-count 3 --worker-machine-count 2`.
 
 ## Customising for your Xen Orchestra environment
 
