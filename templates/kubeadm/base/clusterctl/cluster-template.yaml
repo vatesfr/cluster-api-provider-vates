@@ -63,4 +63,31 @@ spec:
       cluster.x-k8s.io/control-plane: ""
       topology.cluster.x-k8s.io/owned: ""
   remediation:
-    maxInFlight: 1
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 1
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  checks:
+    nodeStartupTimeoutSeconds: 600
+    unhealthyNodeConditions:
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+  selector:
+    matchLabels:
+      topology.cluster.x-k8s.io/owned: ""
+      cluster.x-k8s.io/deployment-name: ${CLUSTER_NAME}-md-0
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 1

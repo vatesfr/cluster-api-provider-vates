@@ -1,0 +1,27 @@
+# MachineHealthCheck for Talos control plane nodes.
+# Detects nodes stuck in NotReady and triggers remediation through the
+# TalosControlPlane (CACPPT), which replaces the unhealthy control plane machine.
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: talos-cluster-cp
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: talos-cluster
+spec:
+  clusterName: talos-cluster
+  checks:
+    nodeStartupTimeoutSeconds: 600
+    unhealthyNodeConditions:
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/control-plane: ""
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 1
