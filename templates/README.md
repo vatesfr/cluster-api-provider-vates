@@ -81,6 +81,33 @@ a `base/` + `overlays/` layout:
 > See `kubeadm/README.md` and `talos/README.md` for the complete file contents
 > of each overlay.
 
+## Machine self-healing
+
+When a VM is killed or becomes unresponsive on Xen Orchestra, the node reports
+`NotReady`. The infrastructure provider **never recreates VMs on its own** — it
+follows the Cluster API `Machine` lifecycle. Replacement is driven by the
+**MachineHealthCheck** (MHC) controller, part of core Cluster API (installed by
+`clusterctl init`):
+
+- A node stuck in `Ready=False` / `Unknown` for 5 minutes marks its `Machine`
+  as unhealthy.
+- **Worker** machines → MHC deletes the unhealthy `Machine`, the `MachineSet`
+  creates a replacement, which gets a fresh `XOMachine` → new VM.
+- **Control-plane** machines → the control plane provider (`KubeadmControlPlane`
+  for kubeadm, `TalosControlPlane` for Talos) remediates, preserving quorum.
+
+The templates ship MHC objects for both roles and both bootstrap flows:
+
+| Bootstrap flow | Control plane | Workers |
+|---|---|---|
+| kubeadm (ClusterClass, `clusterctl/`) | `${CLUSTER_NAME}-cp` | `${CLUSTER_NAME}-worker` |
+| kubeadm (example-cluster) | `my-cluster-cp` | `my-cluster-worker` |
+| talos (flat) | `talos-cluster-cp` | `talos-cluster-worker` |
+
+These are applied automatically when using `kubectl apply -k` (they are part of
+the `kustomization.yaml` resources) or `clusterctl generate cluster --from`
+(they are included in `cluster-template.yaml`).
+
 ### Option A — kubectl apply -k (development)
 
 Deploy the ClusterClass once (it is cluster-scoped), then apply your overlay

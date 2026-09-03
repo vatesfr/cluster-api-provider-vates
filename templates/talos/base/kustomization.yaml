@@ -29,3 +29,5 @@ resources:
   - talos-configtemplate.yaml
   - talos-machinedeployment.yaml
   - talos-cluster.yaml
+  - talos-machinehealthcheck-cp.yaml
+  - talos-machinehealthcheck-worker.yaml

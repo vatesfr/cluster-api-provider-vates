@@ -281,6 +281,25 @@ Retrieve the `talosconfig` once the control plane is up:
 kubectl get talosconfig -n default -o yaml -o jsonpath='{.status.talosConfig}'
 ```
 
+## Self-healing
+
+When a VM is killed or becomes unresponsive on Xen Orchestra, the node reports
+`NotReady` and the Cluster API **MachineHealthCheck** (MHC) triggers the
+replacement — the infrastructure provider never recreates VMs on its own.
+
+The base templates ship two MHC objects (applied automatically through
+`base/` and your overlay):
+
+| MHC | Targets | Remediation |
+|---|---|---|
+| `talos-cluster-cp` | control plane nodes (`cluster.x-k8s.io/control-plane`) | The `TalosControlPlane` replaces the unhealthy machine |
+| `talos-cluster-worker` | worker nodes (`cluster.x-k8s.io/deployment-name: talos-worker-md-0`) | MHC deletes the Machine, the MachineSet creates a replacement |
+
+A node stuck in `Ready=False` / `Unknown` for 5 minutes is considered
+unhealthy. On remediation, a new `Machine` (and thus a new `XOMachine` → VM)
+is created automatically. MHC requires the core Cluster API controllers,
+installed by `clusterctl init`.
+
 ## Machine config patches
 
 The base templates apply the following `strategicPatches`:

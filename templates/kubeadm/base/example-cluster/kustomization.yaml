@@ -4,3 +4,4 @@ kind: Kustomization
 resources:
   - capi-cluster.yaml
   - cp-machinehealthcheck.yaml
+  - worker-machinehealthcheck.yaml
