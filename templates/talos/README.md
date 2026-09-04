@@ -65,6 +65,7 @@ Generate the provider manifest:
 
 ```bash
 make release-manifests
+make dev-overrides   # refresh dist/ and copy the release assets into the local overrides
 ```
 
 Create `~/.config/cluster-api/clusterctl.yaml` (or append to it):
@@ -72,7 +73,7 @@ Create `~/.config/cluster-api/clusterctl.yaml` (or append to it):
 ```yaml
 providers:
   - name: vates
-    url: file:///path/to/cluster-api-provider-vates/dist/infrastructure-components.yaml
+    url: file://${HOME}/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/infrastructure-components.yaml
     type: InfrastructureProvider
 ```
 

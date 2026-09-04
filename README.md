@@ -78,7 +78,7 @@ into `~/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/`):
 providers:
   - name: vates
     type: InfrastructureProvider
-    url: file:///home/<user>/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/infrastructure-components.yaml
+    url: file://${HOME}/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/infrastructure-components.yaml
 ```
 
 For a **published release**, point at the GitHub release instead (no repo clone
