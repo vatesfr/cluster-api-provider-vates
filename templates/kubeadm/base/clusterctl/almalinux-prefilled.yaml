@@ -8,6 +8,8 @@
 #   XO_TEMPLATE_UUID    - UUID of the AlmaLinux/RHEL VM template (almalinux-prefilled)
 #   XO_POOL_UUID        - UUID of your Xen Orchestra pool
 #   XO_NETWORK_UUID     - UUID of your Xen Orchestra network
+#   XO_CNI              - CNI installed by the provider via ClusterResourceSet
+#                         (default: cilium; set to "none" to install manually)
 #
 # Optional variables (clusterctl built-in defaults — not the base/ replicas):
 #   CLUSTER_NAME                - Cluster name (default: name argument)
@@ -52,6 +54,8 @@ spec:
     subnet: ${CP_SUBNET}
   controlPlaneLB: ${CP_LB}
   injectSSHKeys: true
+  addons:
+    cni: ${XO_CNI:-cilium}
 ---
 apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
 kind: XOMachineTemplate
@@ -133,18 +137,6 @@ spec:
         IP=$(hostname -I | awk '{print $1}')
         hostnamectl set-hostname "cp-$(echo "$IP" | tr '.' '-')"
         echo "$IP $(hostname) $(hostname -s)" >> /etc/hosts
-    postKubeadmCommands:
-      - |
-        cp /etc/kubernetes/super-admin.conf /tmp/kubeconfig-local.conf 2>/dev/null || cp /etc/kubernetes/admin.conf /tmp/kubeconfig-local.conf
-        sed -i 's|https://[0-9.]*:6443|https://127.0.0.1:6443|' /tmp/kubeconfig-local.conf
-        export KUBECONFIG=/tmp/kubeconfig-local.conf
-        cilium install --version 1.16.6 \
-          --set ipam.mode=cluster-pool \
-          --set devices=eth0 \
-          --set kubeProxyReplacement=false \
-          --set clustermesh.useAPIServer=false \
-          --set hubble.enabled=false
-        cilium status --wait --wait-duration=90s
 ---
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
 kind: KubeadmConfigTemplate

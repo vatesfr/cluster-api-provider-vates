@@ -8,6 +8,8 @@
 #   XO_TEMPLATE_UUID    - UUID of the AlmaLinux/RHEL VM template (almalinux-fromscratch)
 #   XO_POOL_UUID        - UUID of your Xen Orchestra pool
 #   XO_NETWORK_UUID     - UUID of your Xen Orchestra network
+#   XO_CNI              - CNI installed by the provider via ClusterResourceSet
+#                         (default: cilium; set to "none" to install manually)
 #
 # Optional variables (clusterctl built-in defaults — not the base/ replicas):
 #   CLUSTER_NAME                - Cluster name (default: name argument)
@@ -52,6 +54,8 @@ spec:
     subnet: ${CP_SUBNET}
   controlPlaneLB: ${CP_LB}
   injectSSHKeys: true
+  addons:
+    cni: ${XO_CNI:-cilium}
 ---
 apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
 kind: XOMachineTemplate
@@ -161,25 +165,6 @@ spec:
       - mkdir -p /etc/containerd/certs.d/registry.k8s.io && printf 'server = "https://registry.k8s.io"\n\n[host."https://mirror.gcr.io"]\n  capabilities = ["pull", "resolve"]\n' > /etc/containerd/certs.d/registry.k8s.io/hosts.toml
       - systemctl enable --now containerd
       - systemctl enable --now kubelet
-      - test -f /run/kubeadm/kubeadm.yaml && nohup kubeadm config images pull --config /run/kubeadm/kubeadm.yaml >/tmp/kubeadm-pull.log 2>&1 &
-    postKubeadmCommands:
-      - |
-        cp /etc/kubernetes/super-admin.conf /tmp/kubeconfig-local.conf 2>/dev/null || cp /etc/kubernetes/admin.conf /tmp/kubeconfig-local.conf
-        sed -i 's|https://[0-9.]*:6443|https://127.0.0.1:6443|' /tmp/kubeconfig-local.conf
-        export KUBECONFIG=/tmp/kubeconfig-local.conf
-        if [ ! -x /usr/local/bin/cilium ]; then
-          curl -sL --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz cilium-linux-amd64.tar.gz.sha256sum
-          sha256sum --check cilium-linux-amd64.tar.gz.sha256sum
-          tar xzf cilium-linux-amd64.tar.gz -C /usr/local/bin
-          rm -f cilium-linux-amd64.tar.gz cilium-linux-amd64.tar.gz.sha256sum
-        fi
-        cilium install --version 1.16.6 \
-          --set ipam.mode=cluster-pool \
-          --set devices=eth0 \
-          --set kubeProxyReplacement=false \
-          --set clustermesh.useAPIServer=false \
-          --set hubble.enabled=false
-        cilium status --wait --wait-duration=90s
 ---
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
 kind: KubeadmConfigTemplate

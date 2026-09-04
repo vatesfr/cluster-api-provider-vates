@@ -181,13 +181,12 @@ func findMainDisk(disks []xoclient.Disk) *xoclient.Disk {
 // isCloudConfigDrive reports whether the disk is the cloud-init config drive,
 // identified by its name label. The match is specific to config drives (e.g.
 // XO's "XO CloudConfigDrive") so that Talos disks named "*-nocloud" are not
-// mistaken for config drives.
+// mistaken for config drives, and OS disks whose name merely mentions
+// cloud-init (e.g. "Ubuntu 24.04 Cloud-Init (Hub)") are not skipped.
 func isCloudConfigDrive(d xoclient.Disk) bool {
 	name := strings.ToLower(d.NameLabel)
 	return strings.Contains(name, "cloudconfigdrive") ||
-		strings.Contains(name, "cloud config drive") ||
-		strings.Contains(name, "cloud-init") ||
-		strings.Contains(name, "cloudinit")
+		strings.Contains(name, "cloud config drive")
 }
 
 // diskOrder returns a negative number when a is ordered before b, zero when

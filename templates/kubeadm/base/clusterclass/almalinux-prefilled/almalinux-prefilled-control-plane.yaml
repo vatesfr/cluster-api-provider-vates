@@ -30,8 +30,6 @@ spec:
             IP=$(hostname -I | awk '{print $1}')
             hostnamectl set-hostname "cp-$(echo "$IP" | tr '.' '-')"
             echo "$IP $(hostname) $(hostname -s)" >> /etc/hosts
-        postKubeadmCommands:
-          - "true"
       machineTemplate:
         metadata:
           labels: {}

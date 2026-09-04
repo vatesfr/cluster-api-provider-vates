@@ -1,8 +1,30 @@
-# Exclude test files
-**/*_test.go
+# Build context exclusions for container builds.
+# The repo can contain large build artifacts (packer images, kairos images,
+# local toolchains); excluding them keeps the image build context small.
 
-# Exclude local build artifacts
+# VCS
+.git
+.gitignore
+
+# Local toolchains (controller-gen, envtest, kustomize, ...)
 bin/
 
-# Exclude git
-.git/
+# Generated / distribution artifacts
+dist/
+
+# Docs and local overlays (real XO resource UUIDs)
+docs/
+templates/*/overlays/
+
+# Non-distributed directories
+examples/
+misc/
+scripts/
+
+# Packer build outputs (disk images)
+**/output-*/
+**/packer/build/
+*.vhd
+*.qcow2
+*.raw
+*.vmdk

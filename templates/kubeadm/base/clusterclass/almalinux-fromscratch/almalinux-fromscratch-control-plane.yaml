@@ -58,9 +58,6 @@ spec:
           - mkdir -p /etc/containerd/certs.d/registry.k8s.io && printf 'server = "https://registry.k8s.io"\n\n[host."https://mirror.gcr.io"]\n  capabilities = ["pull", "resolve"]\n' > /etc/containerd/certs.d/registry.k8s.io/hosts.toml
           - systemctl enable --now containerd
           - systemctl enable --now kubelet
-          - test -f /run/kubeadm/kubeadm.yaml && nohup kubeadm config images pull --config /run/kubeadm/kubeadm.yaml >/tmp/kubeadm-pull.log 2>&1 &
-        postKubeadmCommands:
-          - "true"
       machineTemplate:
         metadata:
           labels: {}

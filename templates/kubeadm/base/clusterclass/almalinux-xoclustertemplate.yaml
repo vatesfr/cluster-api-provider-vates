@@ -6,3 +6,5 @@ spec:
   template:
     spec:
       injectSSHKeys: true
+      addons:
+        cni: cilium

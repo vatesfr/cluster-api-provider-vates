@@ -49,8 +49,8 @@ var _ reconcile.Reconciler = (*XOClusterReconciler)(nil)
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters;clusters/status,verbs=get;list;watch;patch;update
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=machines;machines/status,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
-// +kubebuilder:rbac:groups=addons.cluster.x-k8s.io,resources=clusterresourcesets,verbs=get;list;watch;create;update;patch
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch
+// +kubebuilder:rbac:groups=addons.cluster.x-k8s.io,resources=clusterresourcesets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 func (r *XOClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -389,116 +389,166 @@ type csiManifestData struct {
 	ApiServerPort string
 }
 
-// reconcileAddons creates per-cluster CCM + CSI driver ConfigMaps and a
-// ClusterResourceSet targeting only this cluster, using the given XO credentials.
-// The clusterName is the CAPI Cluster name, used to label the ClusterResourceSet
-// so it matches the workload cluster.
-func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, vatesCluster *infrastructurev1beta2.XOCluster, clusterName string, xoCreds *xok8scommon.XoConfig) error {
+// cniCiliumManifest is the rendered Cilium CNI manifest applied via
+// ClusterResourceSet when spec.addons.cni == "cilium".
+//
+//go:embed cni-cilium.yaml
+var cniCiliumManifest string
+
+// defaultAddons returns the effective addon selection, filling defaults for
+// unset fields (CCM/CSI enabled, no CNI).
+func defaultAddons(a *infrastructurev1beta2.AddonsSpec) *infrastructurev1beta2.AddonsSpec {
+	if a == nil {
+		a = &infrastructurev1beta2.AddonsSpec{}
+	}
+	if a.CCM == nil {
+		enabled := true
+		a.CCM = &enabled
+	}
+	if a.CSI == nil {
+		enabled := true
+		a.CSI = &enabled
+	}
+	if a.CNI == nil {
+		none := "none"
+		a.CNI = &none
+	}
+	return a
+}
+
+// ensureAddon creates/updates the per-cluster ConfigMap holding the rendered
+// addon manifest and a ClusterResourceSet targeting only this cluster.
+func (r *XOClusterReconciler) ensureAddon(ctx context.Context, clusterName, addon, crsName, cmName, strategy, manifest string) error {
 	logger := log.FromContext(ctx)
 
-	// -----------------------------------------------------------------------
-	// 1. Render CCM manifest with XO credentials
-	// -----------------------------------------------------------------------
-	ccmData := ccmManifestData{
-		XOAURL:      xoCreds.URL,
-		XOAToken:    xoCreds.Token,
-		XOAInsecure: "true",
-	}
-	if xoCreds.Insecure {
-		ccmData.XOAInsecure = "true"
-	} else {
-		ccmData.XOAInsecure = "false"
-	}
-
-	tmpl, err := template.New("ccm").Parse(ccmManifestTemplate)
-	if err != nil {
-		return fmt.Errorf("parse CCM template: %w", err)
-	}
-	var ccmBuf bytes.Buffer
-	if err := tmpl.Execute(&ccmBuf, ccmData); err != nil {
-		return fmt.Errorf("execute CCM template: %w", err)
-	}
-
-	// -----------------------------------------------------------------------
-	// 2. Create/update CCM ConfigMap (per cluster)
-	// -----------------------------------------------------------------------
-	ccmCMName := "ccm-manifests-" + clusterName
-	ccmCM := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: ccmCMName, Namespace: "default"}}
-	op, err := ctrl.CreateOrUpdate(ctx, r.Client, ccmCM, func() error {
-		if ccmCM.Data == nil {
-			ccmCM.Data = make(map[string]string)
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: "default"}}
+	op, err := ctrl.CreateOrUpdate(ctx, r.Client, cm, func() error {
+		if cm.Data == nil {
+			cm.Data = make(map[string]string)
 		}
-		ccmCM.Data["ccm.yaml"] = ccmBuf.String()
+		cm.Data[addon+".yaml"] = manifest
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("create/update ConfigMap %s: %w", ccmCMName, err)
+		return fmt.Errorf("create/update ConfigMap %s: %w", cmName, err)
 	}
-	logger.Info("CCM manifests ConfigMap reconciled", "cluster", clusterName, "configmap", ccmCMName, "operation", op)
+	logger.Info("Addon manifests ConfigMap reconciled", "addon", addon, "cluster", clusterName, "configmap", cmName, "operation", op)
 
-	// -----------------------------------------------------------------------
-	// 3. Render CSI manifest with API server endpoint
-	// -----------------------------------------------------------------------
-	apiServerHost := "127.0.0.1"
-	apiServerPort := "6443"
-	if vatesCluster.Spec.ControlPlaneEndpoint != nil {
-		apiServerHost = vatesCluster.Spec.ControlPlaneEndpoint.Host
-		apiServerPort = fmt.Sprintf("%d", vatesCluster.Spec.ControlPlaneEndpoint.Port)
-	}
-	csiData := csiManifestData{
-		ApiServerHost: apiServerHost,
-		ApiServerPort: apiServerPort,
-	}
-	csiTmpl, err := template.New("csi").Parse(csiManifestTemplate)
-	if err != nil {
-		return fmt.Errorf("parse CSI template: %w", err)
-	}
-	var csiBuf bytes.Buffer
-	if err := csiTmpl.Execute(&csiBuf, csiData); err != nil {
-		return fmt.Errorf("execute CSI template: %w", err)
-	}
-
-	// -----------------------------------------------------------------------
-	// 4. Create/update CSI ConfigMap (per cluster)
-	// -----------------------------------------------------------------------
-	csiCMName := "csi-manifests-" + clusterName
-	csiCM := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: csiCMName, Namespace: "default"}}
-	op, err = ctrl.CreateOrUpdate(ctx, r.Client, csiCM, func() error {
-		if csiCM.Data == nil {
-			csiCM.Data = make(map[string]string)
-		}
-		csiCM.Data["csi.yaml"] = csiBuf.String()
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("create/update ConfigMap %s: %w", csiCMName, err)
-	}
-	logger.Info("CSI manifests ConfigMap reconciled", "cluster", clusterName, "configmap", csiCMName, "operation", op)
-
-	// -----------------------------------------------------------------------
-	// 4. Create/update ClusterResourceSet (per cluster)
-	// -----------------------------------------------------------------------
-	crsName := "ccm-deployment-" + clusterName
-	crs := &addonsv1.ClusterResourceSet{
-		ObjectMeta: metav1.ObjectMeta{Name: crsName, Namespace: "default"},
-	}
+	crs := &addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: crsName, Namespace: "default"}}
 	op, err = ctrl.CreateOrUpdate(ctx, r.Client, crs, func() error {
 		crs.Spec = addonsv1.ClusterResourceSetSpec{
 			ClusterSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"cluster.x-k8s.io/cluster-name": clusterName},
 			},
-			Resources: []addonsv1.ResourceRef{
-				{Kind: "ConfigMap", Name: ccmCMName},
-				{Kind: "ConfigMap", Name: csiCMName},
-			},
-			Strategy: "Reconcile",
+			Resources: []addonsv1.ResourceRef{{Kind: "ConfigMap", Name: cmName}},
+			Strategy:  strategy,
 		}
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("create/update ClusterResourceSet %s: %w", crsName, err)
 	}
-	logger.Info("Addons ClusterResourceSet reconciled", "cluster", clusterName, "crs", crsName, "operation", op)
+	logger.Info("Addon ClusterResourceSet reconciled", "addon", addon, "cluster", clusterName, "crs", crsName, "operation", op)
+	return nil
+}
+
+// removeAddon deletes the per-cluster ConfigMap and ClusterResourceSet of a
+// disabled addon. Resources already applied to the workload cluster are left
+// untouched.
+func (r *XOClusterReconciler) removeAddon(ctx context.Context, clusterName, addon, crsName, cmName string) error {
+	logger := log.FromContext(ctx)
+	for _, obj := range []client.Object{
+		&addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: crsName, Namespace: "default"}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: "default"}},
+	} {
+		if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+	logger.Info("Addon disabled, removed ConfigMap and ClusterResourceSet", "addon", addon, "cluster", clusterName)
+	return nil
+}
+
+// reconcileAddons creates per-cluster ConfigMaps and one ClusterResourceSet per
+// enabled addon (CCM, CSI, CNI), targeting only this cluster. Addons are
+// optional and driven by the XOCluster spec.addons field.
+func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, vatesCluster *infrastructurev1beta2.XOCluster, clusterName string, xoCreds *xok8scommon.XoConfig) error {
+	addons := defaultAddons(vatesCluster.Spec.Addons)
+
+	// -----------------------------------------------------------------------
+	// CCM (Xen Orchestra cloud-controller-manager)
+	// -----------------------------------------------------------------------
+	ccmCMName := "ccm-manifests-" + clusterName
+	if *addons.CCM {
+		ccmData := ccmManifestData{
+			XOAURL:      xoCreds.URL,
+			XOAToken:    xoCreds.Token,
+			XOAInsecure: "true",
+		}
+		if xoCreds.Insecure {
+			ccmData.XOAInsecure = "true"
+		} else {
+			ccmData.XOAInsecure = "false"
+		}
+		tmpl, err := template.New("ccm").Parse(ccmManifestTemplate)
+		if err != nil {
+			return fmt.Errorf("parse CCM template: %w", err)
+		}
+		var ccmBuf bytes.Buffer
+		if err := tmpl.Execute(&ccmBuf, ccmData); err != nil {
+			return fmt.Errorf("execute CCM template: %w", err)
+		}
+		if err := r.ensureAddon(ctx, clusterName, "ccm", "ccm-deployment-"+clusterName, ccmCMName, "Reconcile", ccmBuf.String()); err != nil {
+			return err
+		}
+	} else if err := r.removeAddon(ctx, clusterName, "ccm", "ccm-deployment-"+clusterName, ccmCMName); err != nil {
+		return err
+	}
+
+	// -----------------------------------------------------------------------
+	// CSI (Xen Orchestra storage driver)
+	// -----------------------------------------------------------------------
+	csiCMName := "csi-manifests-" + clusterName
+	if *addons.CSI {
+		apiServerHost := "127.0.0.1"
+		apiServerPort := "6443"
+		if vatesCluster.Spec.ControlPlaneEndpoint != nil {
+			apiServerHost = vatesCluster.Spec.ControlPlaneEndpoint.Host
+			apiServerPort = fmt.Sprintf("%d", vatesCluster.Spec.ControlPlaneEndpoint.Port)
+		}
+		csiData := csiManifestData{
+			ApiServerHost: apiServerHost,
+			ApiServerPort: apiServerPort,
+		}
+		csiTmpl, err := template.New("csi").Parse(csiManifestTemplate)
+		if err != nil {
+			return fmt.Errorf("parse CSI template: %w", err)
+		}
+		var csiBuf bytes.Buffer
+		if err := csiTmpl.Execute(&csiBuf, csiData); err != nil {
+			return fmt.Errorf("execute CSI template: %w", err)
+		}
+		if err := r.ensureAddon(ctx, clusterName, "csi", "csi-deployment-"+clusterName, csiCMName, "Reconcile", csiBuf.String()); err != nil {
+			return err
+		}
+	} else if err := r.removeAddon(ctx, clusterName, "csi", "csi-deployment-"+clusterName, csiCMName); err != nil {
+		return err
+	}
+
+	// -----------------------------------------------------------------------
+	// CNI (container network interface)
+	// -----------------------------------------------------------------------
+	cniCMName := "cni-manifests-" + clusterName
+	switch *addons.CNI {
+	case "cilium":
+		if err := r.ensureAddon(ctx, clusterName, "cni", "cni-deployment-"+clusterName, cniCMName, "ApplyOnce", cniCiliumManifest); err != nil {
+			return err
+		}
+	default: // "none"
+		if err := r.removeAddon(ctx, clusterName, "cni", "cni-deployment-"+clusterName, cniCMName); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
