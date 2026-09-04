@@ -75,7 +75,7 @@ a `base/` + `overlays/` layout:
   ClusterClass / managed topology yet, so these are flat templates.
 
 > The Talos flow also needs the Talos RBAC binding (it is not part of the
-> default install): `kubectl apply -k config/rbac/talos`. See `talos/README.md`.
+> default install): `kubectl apply -k config/rbac/talos`. See [talos/README.md](talos/README.md).
 
 > The `overlays/` directories contain environment-specific UUIDs (and are
 > git-ignored) — **not** intended for distribution. Use `base/` for community usage.
@@ -85,7 +85,7 @@ a `base/` + `overlays/` layout:
 > `base/` templates use placeholders and must **not** be edited directly.
 > Always create an **overlay** to provide your environment's values — this
 > keeps `base/` reusable and avoids committing environment-specific UUIDs.
-> See `kubeadm/README.md` and `talos/README.md` for the complete file contents
+> See [kubeadm/README.md](kubeadm/README.md) and [talos/README.md](talos/README.md) for the complete file contents
 > of each overlay.
 
 ## Machine self-healing
@@ -177,7 +177,7 @@ clusterctl generate cluster my-cluster \
 Both template styles embed the control plane and worker `MachineHealthChecks`, so
 killed/unhealthy machines are remediated automatically. See the variables
 documented at the top of each template, and the per-flow
-READMEs (`templates/kubeadm/README.md`, `templates/talos/README.md`).
+READMEs ([kubeadm/README.md](kubeadm/README.md), [talos/README.md](talos/README.md)).
 
 > `CONTROL_PLANE_MACHINE_COUNT` / `WORKER_MACHINE_COUNT` default to `1` / `0`
 > (clusterctl built-ins). To match the `base/` replicas, pass

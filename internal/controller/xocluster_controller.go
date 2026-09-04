@@ -31,6 +31,9 @@ import (
 
 const (
 	xoClusterFinalizer = "vates.infrastructure.cluster.x-k8s.io/xocluster"
+	// defaultNamespace is the namespace used for addon ConfigMaps and
+	// ClusterResourceSets.
+	defaultNamespace = "default"
 )
 
 // XOClusterReconciler reconciles a XOCluster object.
@@ -421,7 +424,7 @@ func defaultAddons(a *infrastructurev1beta2.AddonsSpec) *infrastructurev1beta2.A
 func (r *XOClusterReconciler) ensureAddon(ctx context.Context, clusterName, addon, crsName, cmName, strategy, manifest string) error {
 	logger := log.FromContext(ctx)
 
-	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: "default"}}
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: defaultNamespace}}
 	op, err := ctrl.CreateOrUpdate(ctx, r.Client, cm, func() error {
 		if cm.Data == nil {
 			cm.Data = make(map[string]string)
@@ -434,7 +437,7 @@ func (r *XOClusterReconciler) ensureAddon(ctx context.Context, clusterName, addo
 	}
 	logger.Info("Addon manifests ConfigMap reconciled", "addon", addon, "cluster", clusterName, "configmap", cmName, "operation", op)
 
-	crs := &addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: crsName, Namespace: "default"}}
+	crs := &addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: crsName, Namespace: defaultNamespace}}
 	op, err = ctrl.CreateOrUpdate(ctx, r.Client, crs, func() error {
 		crs.Spec = addonsv1.ClusterResourceSetSpec{
 			ClusterSelector: metav1.LabelSelector{
@@ -458,8 +461,8 @@ func (r *XOClusterReconciler) ensureAddon(ctx context.Context, clusterName, addo
 func (r *XOClusterReconciler) removeAddon(ctx context.Context, clusterName, addon, crsName, cmName string) error {
 	logger := log.FromContext(ctx)
 	for _, obj := range []client.Object{
-		&addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: crsName, Namespace: "default"}},
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: "default"}},
+		&addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: crsName, Namespace: defaultNamespace}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: defaultNamespace}},
 	} {
 		if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
 			return err
@@ -483,10 +486,10 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *in
 		ccmData := ccmManifestData{
 			XOAURL:      xoCreds.URL,
 			XOAToken:    xoCreds.Token,
-			XOAInsecure: "true",
+			XOAInsecure: trueStr,
 		}
 		if xoCreds.Insecure {
-			ccmData.XOAInsecure = "true"
+			ccmData.XOAInsecure = trueStr
 		} else {
 			ccmData.XOAInsecure = "false"
 		}
