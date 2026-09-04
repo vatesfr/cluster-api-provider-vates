@@ -22,6 +22,8 @@ import (
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
 	xok8scommon "github.com/vatesfr/xenorchestra-k8s-common"
 
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+
 	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 )
 
@@ -70,7 +72,46 @@ func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClie
 	}
 	logger.Info("ProviderID saved", "providerID", providerID)
 
+	SetVMTags(ctx, vatesMachine, vm.ID, xoClient)
+
 	return vm, nil
+}
+
+// SetVMTags applies identifying tags to the VM so it can be recognized in XO
+// (cluster name, CAPI machine name, role). Best-effort: errors are logged and
+// the reconcile continues. Idempotent, safe to call on every reconcile.
+func SetVMTags(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachine, vmID uuid.UUID, xoClient *xok8scommon.XoClient) {
+	logger := log.FromContext(ctx)
+	if xoClient == nil {
+		return
+	}
+	v1Client := xoClient.Client.V1Client()
+	v1Concrete, v1Ok := v1Client.(*xoclient.Client)
+	if !v1Ok || v1Concrete == nil {
+		return
+	}
+
+	tags := vmTags(vatesMachine)
+	for _, tag := range tags {
+		if err := v1Concrete.AddTag(vmID.String(), tag); err != nil {
+			logger.Info("Failed to set VM tag (will continue)", "id", vmID.String(), "tag", tag, "error", err)
+			return
+		}
+	}
+	logger.Info("Set VM tags", "id", vmID.String(), "tags", tags)
+}
+
+// vmTags builds the identifying tags for a VM (cluster, machine name, role).
+func vmTags(vatesMachine *infrastructurev1beta2.XOMachine) []string {
+	role := "worker"
+	if _, ok := vatesMachine.Labels[clusterv1.MachineControlPlaneLabel]; ok {
+		role = "control-plane"
+	}
+	return []string{
+		"cluster-name:" + vatesMachine.Labels[clusterv1.ClusterNameLabel],
+		"machine:" + vatesMachine.Name,
+		"role:" + role,
+	}
 }
 
 func buildCreateParams(templateID uuid.UUID, vmName string, cloudConfig string, networkConfig *string) *payloads.CreateVMParams {

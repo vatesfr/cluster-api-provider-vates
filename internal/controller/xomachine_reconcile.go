@@ -121,6 +121,8 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, vatesMachine 
 		return ctrl.Result{}, err
 	}
 
+	xomachine.SetVMTags(ctx, vatesMachine, vm.ID, xoClient)
+
 	if !vatesMachine.Status.Ready {
 		result, waitErr := xomachine.WaitForVMReady(ctx, r.Client, xoClient, vatesMachine, vm)
 		if waitErr != nil || !result.IsZero() {
@@ -175,7 +177,19 @@ func (r *XOMachineReconciler) buildVMName(vatesMachine *infrastructurev1beta2.XO
 			break
 		}
 	}
+	if suffix := lastDashSegment(bsResult.Machine.Name); suffix != "" {
+		role += "-" + suffix
+	}
 	return np + cn + role
+}
+
+// lastDashSegment returns the last dash-separated segment of a name, e.g.
+// "demo3-cp-7n62g" -> "7n62g". Used to make VM names unique per Machine.
+func lastDashSegment(name string) string {
+	if i := strings.LastIndex(name, "-"); i >= 0 {
+		return name[i+1:]
+	}
+	return ""
 }
 
 // tryFastPath returns a non-nil result when the VM already has a providerID
@@ -189,6 +203,15 @@ func (r *XOMachineReconciler) tryFastPath(ctx context.Context, vatesMachine *inf
 		if !isConditionTrue(vatesMachine, "VmReady") {
 			if ue := xomachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionTrue, "VmReady", "VM is created, running and has an IP address"); ue != nil {
 				return &ctrl.Result{}, ue
+			}
+		}
+		// Best-effort: keep VM tags up to date (also tags VMs created before
+		// tagging was supported).
+		if xoCreds, err := r.resolveMachineCredentials(ctx, vatesMachine); err == nil {
+			if xoClient, err := r.newXOClient(ctx, xoCreds); err == nil && xoClient != nil {
+				if vmID, parseErr := xok8scommon.GetVMID(*vatesMachine.Status.ProviderID); parseErr == nil {
+					xomachine.SetVMTags(ctx, vatesMachine, vmID, xoClient)
+				}
 			}
 		}
 		return &ctrl.Result{}, nil
