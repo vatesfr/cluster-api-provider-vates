@@ -42,11 +42,11 @@ var _ = Describe("XOMachine Controller", func() {
 			Name:      resourceName,
 			Namespace: "default", // TODO(user):Modify as needed
 		}
-		vatesMachine := &infrastructurev1beta2.XOMachine{}
+		xoMachine := &infrastructurev1beta2.XOMachine{}
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind XOMachine")
-			err := k8sClient.Get(ctx, typeNamespacedName, vatesMachine)
+			err := k8sClient.Get(ctx, typeNamespacedName, xoMachine)
 			if err != nil && errors.IsNotFound(err) {
 				resource := &infrastructurev1beta2.XOMachine{
 					ObjectMeta: metav1.ObjectMeta{

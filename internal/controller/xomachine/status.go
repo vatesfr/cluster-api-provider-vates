@@ -14,20 +14,20 @@ import (
 
 // UpdateCondition sets the "Ready" condition on the XOMachine and persists
 // it via the status sub-resource. A condition update error is returned, if any.
-func UpdateCondition(ctx context.Context, c client.Client, vatesMachine *infrastructurev1beta2.XOMachine, status metav1.ConditionStatus, reason, msg string) error {
-	SetCondition(vatesMachine, "Ready", status, reason, msg)
-	return c.Status().Update(ctx, vatesMachine)
+func UpdateCondition(ctx context.Context, c client.Client, xoMachine *infrastructurev1beta2.XOMachine, status metav1.ConditionStatus, reason, msg string) error {
+	SetCondition(xoMachine, "Ready", status, reason, msg)
+	return c.Status().Update(ctx, xoMachine)
 }
 
 // SetCondition updates or adds a condition in the object's Conditions slice.
 // LastTransitionTime is only updated when the condition status changes.
-func SetCondition(vatesMachine *infrastructurev1beta2.XOMachine, conditionType string, status metav1.ConditionStatus, reason, message string) {
-	i := slices.IndexFunc(vatesMachine.Status.Conditions, func(c metav1.Condition) bool {
+func SetCondition(xoMachine *infrastructurev1beta2.XOMachine, conditionType string, status metav1.ConditionStatus, reason, message string) {
+	i := slices.IndexFunc(xoMachine.Status.Conditions, func(c metav1.Condition) bool {
 		return c.Type == conditionType
 	})
 
 	if i >= 0 {
-		c := &vatesMachine.Status.Conditions[i]
+		c := &xoMachine.Status.Conditions[i]
 		if c.Status != status {
 			c.LastTransitionTime = metav1.Now()
 		}
@@ -37,7 +37,7 @@ func SetCondition(vatesMachine *infrastructurev1beta2.XOMachine, conditionType s
 		return
 	}
 
-	vatesMachine.Status.Conditions = append(vatesMachine.Status.Conditions, metav1.Condition{
+	xoMachine.Status.Conditions = append(xoMachine.Status.Conditions, metav1.Condition{
 		Type: conditionType, Status: status, Reason: reason, Message: message,
 		LastTransitionTime: metav1.Now(),
 	})
@@ -61,10 +61,10 @@ func (e *ConditionError) Unwrap() error {
 
 // WithConditionUpdate calls updateCondition and returns a ConditionError if
 // either the original error or the condition update fails.
-func WithConditionUpdate(ctx context.Context, c client.Client, vatesMachine *infrastructurev1beta2.XOMachine, original error, status metav1.ConditionStatus, reason string) error {
+func WithConditionUpdate(ctx context.Context, c client.Client, xoMachine *infrastructurev1beta2.XOMachine, original error, status metav1.ConditionStatus, reason string) error {
 	logger := log.FromContext(ctx)
 	logger.Error(original, reason)
-	if condErr := UpdateCondition(ctx, c, vatesMachine, status, reason, original.Error()); condErr != nil {
+	if condErr := UpdateCondition(ctx, c, xoMachine, status, reason, original.Error()); condErr != nil {
 		return &ConditionError{Original: original, CondErr: condErr}
 	}
 	return original

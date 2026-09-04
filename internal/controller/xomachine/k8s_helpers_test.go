@@ -28,7 +28,7 @@ var _ = Describe("GetOwnerMachine", func() {
 		ctx = context.Background()
 	})
 
-	It("returns the Machine referencing this VatesMachine", func() {
+	It("returns the Machine referencing this XOMachine", func() {
 		machine := &clusterv1.Machine{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-machine", Namespace: "default", UID: "machine-uid"},
 			Spec: clusterv1.MachineSpec{
