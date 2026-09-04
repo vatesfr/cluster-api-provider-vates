@@ -27,26 +27,26 @@ import (
 	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 )
 
-func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, vatesMachine *infrastructurev1beta2.XOMachine, poolID uuid.UUID, templateID uuid.UUID, cloudConfig string, networkConfig *string, vmName string) (*payloads.VM, error) {
+func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, xoMachine *infrastructurev1beta2.XOMachine, poolID uuid.UUID, templateID uuid.UUID, cloudConfig string, networkConfig *string, vmName string, providerName string) (*payloads.VM, error) {
 	logger := log.FromContext(ctx)
 
 	createParams := buildCreateParams(templateID, vmName, cloudConfig, networkConfig)
 
-	if vatesMachine.Spec.ResourceSet != nil && vatesMachine.Spec.ResourceSet.Memory != "" {
-		memQty, err := resource.ParseQuantity(vatesMachine.Spec.ResourceSet.Memory)
+	if xoMachine.Spec.ResourceSet != nil && xoMachine.Spec.ResourceSet.Memory != "" {
+		memQty, err := resource.ParseQuantity(xoMachine.Spec.ResourceSet.Memory)
 		if err != nil {
-			logger.Error(err, "Failed to parse memory quantity", "memory", vatesMachine.Spec.ResourceSet.Memory)
-			return nil, WithConditionUpdate(ctx, c, vatesMachine, err, metav1.ConditionFalse, "InvalidMemoryQuantity")
+			logger.Error(err, "Failed to parse memory quantity", "memory", xoMachine.Spec.ResourceSet.Memory)
+			return nil, WithConditionUpdate(ctx, c, xoMachine, err, metav1.ConditionFalse, "InvalidMemoryQuantity")
 		}
 		memBytes := int(memQty.Value())
 		createParams.Memory = &memBytes
-		logger.Info("Set VM memory", "memory", vatesMachine.Spec.ResourceSet.Memory, "bytes", memBytes)
+		logger.Info("Set VM memory", "memory", xoMachine.Spec.ResourceSet.Memory, "bytes", memBytes)
 	}
 
 	v1Client := xoClient.Client.V1Client()
 	v1Concrete, v1Ok := v1Client.(*xoclient.Client)
 
-	addVIFsToParams(ctx, vatesMachine, v1Client, createParams, poolID)
+	addVIFsToParams(ctx, xoMachine, v1Client, createParams, poolID)
 
 	vm, err := xoClient.Client.VM().Create(ctx, poolID, createParams)
 	if err != nil {
@@ -56,31 +56,32 @@ func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClie
 		}
 		if err != nil {
 			logger.Error(err, "Failed to create VM", "name", vmName)
-			return nil, WithConditionUpdate(ctx, c, vatesMachine, err, metav1.ConditionFalse, "VmCreationFailed")
+			return nil, WithConditionUpdate(ctx, c, xoMachine, err, metav1.ConditionFalse, "VmCreationFailed")
 		}
 	}
 
 	logger.Info("VM created", "name", vm.NameLabel, "id", vm.ID.String(), "pool", poolID.String())
 
-	resizeDiskIfNeeded(ctx, vatesMachine, vm, v1Client, v1Concrete, v1Ok)
-	setCPUsIfNeeded(ctx, vatesMachine, vm, v1Concrete, v1Ok)
+	resizeDiskIfNeeded(ctx, xoMachine, vm, v1Client, v1Concrete, v1Ok)
+	setCPUsIfNeeded(ctx, xoMachine, vm, v1Concrete, v1Ok)
 	setBootOrder(ctx, vm, v1Concrete, v1Ok)
 
 	providerID := xok8scommon.GetProviderID(poolID, vm)
-	if err := saveProviderID(ctx, c, vatesMachine, providerID); err != nil {
+	if err := saveProviderID(ctx, c, xoMachine, providerID); err != nil {
 		return nil, err
 	}
 	logger.Info("ProviderID saved", "providerID", providerID)
 
-	SetVMTags(ctx, vatesMachine, vm.ID, xoClient)
+	SetVMTags(ctx, xoMachine, vm.ID, xoClient, providerName)
 
 	return vm, nil
 }
 
 // SetVMTags applies identifying tags to the VM so it can be recognized in XO
-// (cluster name, CAPI machine name, role). Best-effort: errors are logged and
-// the reconcile continues. Idempotent, safe to call on every reconcile.
-func SetVMTags(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachine, vmID uuid.UUID, xoClient *xok8scommon.XoClient) {
+// (owning provider, cluster name, CAPI machine name, role, bootstrap provider).
+// Best-effort: errors are logged and the reconcile continues. Idempotent,
+// safe to call on every reconcile.
+func SetVMTags(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, vmID uuid.UUID, xoClient *xok8scommon.XoClient, providerName string) {
 	logger := log.FromContext(ctx)
 	if xoClient == nil {
 		return
@@ -91,7 +92,7 @@ func SetVMTags(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachin
 		return
 	}
 
-	tags := vmTags(vatesMachine)
+	tags := vmTags(xoMachine, providerName)
 	for _, tag := range tags {
 		if err := v1Concrete.AddTag(vmID.String(), tag); err != nil {
 			logger.Info("Failed to set VM tag (will continue)", "id", vmID.String(), "tag", tag, "error", err)
@@ -101,15 +102,20 @@ func SetVMTags(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachin
 	logger.Info("Set VM tags", "id", vmID.String(), "tags", tags)
 }
 
-// vmTags builds the identifying tags for a VM (cluster, machine name, role).
-func vmTags(vatesMachine *infrastructurev1beta2.XOMachine) []string {
+// vmTags builds the identifying tags for a VM: it is always tagged with
+// "vates-capi" (managed by this provider) plus a mandatory "bootstrap:<name>"
+// tag derived from the bootstrap provider name, so any new bootstrap provider
+// is tagged automatically once it implements the Provider interface.
+func vmTags(xoMachine *infrastructurev1beta2.XOMachine, providerName string) []string {
 	role := "worker"
-	if _, ok := vatesMachine.Labels[clusterv1.MachineControlPlaneLabel]; ok {
+	if _, ok := xoMachine.Labels[clusterv1.MachineControlPlaneLabel]; ok {
 		role = "control-plane"
 	}
 	return []string{
-		"cluster-name:" + vatesMachine.Labels[clusterv1.ClusterNameLabel],
-		"machine:" + vatesMachine.Name,
+		"vates-capi",
+		"bootstrap:" + providerName,
+		"cluster-name:" + xoMachine.Labels[clusterv1.ClusterNameLabel],
+		"machine:" + xoMachine.Name,
 		"role:" + role,
 	}
 }
@@ -126,12 +132,12 @@ func buildCreateParams(templateID uuid.UUID, vmName string, cloudConfig string, 
 	return createParams
 }
 
-func addVIFsToParams(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachine, v1Client xoclient.XOClient, createParams *payloads.CreateVMParams, poolID uuid.UUID) {
+func addVIFsToParams(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, v1Client xoclient.XOClient, createParams *payloads.CreateVMParams, poolID uuid.UUID) {
 	logger := log.FromContext(ctx)
-	if vatesMachine.Spec.NetworkConfig == nil || len(vatesMachine.Spec.NetworkConfig.Networks) == 0 {
+	if xoMachine.Spec.NetworkConfig == nil || len(xoMachine.Spec.NetworkConfig.Networks) == 0 {
 		return
 	}
-	for i, netConfig := range vatesMachine.Spec.NetworkConfig.Networks {
+	for i, netConfig := range xoMachine.Spec.NetworkConfig.Networks {
 		networkID, err := ResolveNetworkID(v1Client, netConfig, poolID)
 		if err != nil {
 			logger.Error(err, "Failed to resolve network for VM creation", "network", netConfig.Name)
@@ -146,11 +152,11 @@ func addVIFsToParams(ctx context.Context, vatesMachine *infrastructurev1beta2.XO
 	}
 }
 
-func resizeDiskIfNeeded(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM, v1Client xoclient.XOClient, v1Concrete *xoclient.Client, v1Ok bool) {
+func resizeDiskIfNeeded(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM, v1Client xoclient.XOClient, v1Concrete *xoclient.Client, v1Ok bool) {
 	logger := log.FromContext(ctx)
 	diskSize := ""
-	if vatesMachine.Spec.ResourceSet != nil {
-		diskSize = vatesMachine.Spec.ResourceSet.DiskSize
+	if xoMachine.Spec.ResourceSet != nil {
+		diskSize = xoMachine.Spec.ResourceSet.DiskSize
 	}
 	if diskSize == "" || !v1Ok {
 		return
@@ -262,12 +268,12 @@ func parseDiskPosition(position string) (int, bool) {
 	return n, true
 }
 
-func setCPUsIfNeeded(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM, v1Concrete *xoclient.Client, v1Ok bool) {
+func setCPUsIfNeeded(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM, v1Concrete *xoclient.Client, v1Ok bool) {
 	logger := log.FromContext(ctx)
-	if vatesMachine.Spec.ResourceSet == nil || vatesMachine.Spec.ResourceSet.CPUs == nil || !v1Ok {
+	if xoMachine.Spec.ResourceSet == nil || xoMachine.Spec.ResourceSet.CPUs == nil || !v1Ok {
 		return
 	}
-	cpus := int(*vatesMachine.Spec.ResourceSet.CPUs)
+	cpus := int(*xoMachine.Spec.ResourceSet.CPUs)
 	var success bool
 	if err := v1Concrete.Call("vm.set", map[string]any{
 		"id":   vm.ID.String(),
@@ -296,36 +302,36 @@ func setBootOrder(ctx context.Context, vm *payloads.VM, v1Concrete *xoclient.Cli
 	logger.Info("Set VM boot order to disk", "id", vm.ID.String(), "success", success)
 }
 
-func saveProviderID(ctx context.Context, c client.Client, vatesMachine *infrastructurev1beta2.XOMachine, providerID string) error {
+func saveProviderID(ctx context.Context, c client.Client, xoMachine *infrastructurev1beta2.XOMachine, providerID string) error {
 	logger := log.FromContext(ctx)
-	vatesMachine.Spec.ProviderID = &providerID
-	if err := c.Update(ctx, vatesMachine); err != nil {
+	xoMachine.Spec.ProviderID = &providerID
+	if err := c.Update(ctx, xoMachine); err != nil {
 		if !apierrors.IsConflict(err) {
 			logger.Error(err, "Failed to save providerID in spec after VM creation")
 			return err
 		}
 		logger.Info("Conflict saving providerID in spec, retrying")
-		if err := c.Get(ctx, types.NamespacedName{Namespace: vatesMachine.Namespace, Name: vatesMachine.Name}, vatesMachine); err != nil {
+		if err := c.Get(ctx, types.NamespacedName{Namespace: xoMachine.Namespace, Name: xoMachine.Name}, xoMachine); err != nil {
 			return err
 		}
-		vatesMachine.Spec.ProviderID = &providerID
-		if err := c.Update(ctx, vatesMachine); err != nil {
+		xoMachine.Spec.ProviderID = &providerID
+		if err := c.Update(ctx, xoMachine); err != nil {
 			logger.Error(err, "Failed to save providerID in spec after retry")
 			return err
 		}
 	}
-	vatesMachine.Status.ProviderID = &providerID
-	if err := c.Status().Update(ctx, vatesMachine); err != nil {
+	xoMachine.Status.ProviderID = &providerID
+	if err := c.Status().Update(ctx, xoMachine); err != nil {
 		if !apierrors.IsConflict(err) {
 			logger.Error(err, "Failed to save providerID in status after VM creation")
 			return err
 		}
 		logger.Info("Conflict saving providerID in status, retrying")
-		if err := c.Get(ctx, types.NamespacedName{Namespace: vatesMachine.Namespace, Name: vatesMachine.Name}, vatesMachine); err != nil {
+		if err := c.Get(ctx, types.NamespacedName{Namespace: xoMachine.Namespace, Name: xoMachine.Name}, xoMachine); err != nil {
 			return err
 		}
-		vatesMachine.Status.ProviderID = &providerID
-		if err := c.Status().Update(ctx, vatesMachine); err != nil {
+		xoMachine.Status.ProviderID = &providerID
+		if err := c.Status().Update(ctx, xoMachine); err != nil {
 			logger.Error(err, "Failed to save providerID in status after retry")
 			return err
 		}
@@ -334,13 +340,13 @@ func saveProviderID(ctx context.Context, c client.Client, vatesMachine *infrastr
 }
 
 // LookupExistingVM looks up an already-known VM by its ID.
-func LookupExistingVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, vatesMachine *infrastructurev1beta2.XOMachine, vmID uuid.UUID) (*payloads.VM, error) {
+func LookupExistingVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, xoMachine *infrastructurev1beta2.XOMachine, vmID uuid.UUID) (*payloads.VM, error) {
 	logger := log.FromContext(ctx)
 
 	vm, err := xoClient.Client.VM().GetByID(ctx, vmID)
 	if err != nil {
 		logger.Error(err, "Failed to get existing VM by providerID", "vmID", vmID.String())
-		return nil, WithConditionUpdate(ctx, c, vatesMachine, err, metav1.ConditionFalse, "VmNotFound")
+		return nil, WithConditionUpdate(ctx, c, xoMachine, err, metav1.ConditionFalse, "VmNotFound")
 	}
 	logger.Info("Found existing VM from providerID", "id", vm.ID.String(), "name", vm.NameLabel)
 	return vm, nil
@@ -349,7 +355,7 @@ func LookupExistingVM(ctx context.Context, c client.Client, xoClient *xok8scommo
 // StartVM starts the VM if it is not already running. It waits for the start
 // task to complete and returns the updated VM, a boolean indicating whether
 // the VM was started by this call, and any error.
-func StartVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, vatesMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM) (*payloads.VM, bool, error) {
+func StartVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, xoMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM) (*payloads.VM, bool, error) {
 	logger := log.FromContext(ctx)
 	vmWasStarted := false
 
@@ -366,7 +372,7 @@ func StartVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClien
 				}
 			} else {
 				logger.Error(err, "Failed to start VM", "id", vm.ID.String())
-				return nil, false, WithConditionUpdate(ctx, c, vatesMachine, err, metav1.ConditionFalse, "VmStartFailed")
+				return nil, false, WithConditionUpdate(ctx, c, xoMachine, err, metav1.ConditionFalse, "VmStartFailed")
 			}
 		} else {
 			logger.Info("Waiting for VM start task", "task", taskID)
@@ -374,12 +380,12 @@ func StartVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClien
 			task, err := xoClient.Client.Task().Wait(ctx, taskID)
 			if err != nil {
 				logger.Error(err, "Failed to wait for VM start", "task", taskID)
-				return nil, false, WithConditionUpdate(ctx, c, vatesMachine, err, metav1.ConditionFalse, "VmStartFailed")
+				return nil, false, WithConditionUpdate(ctx, c, xoMachine, err, metav1.ConditionFalse, "VmStartFailed")
 			}
 			if task.Status != payloads.Success {
 				err := fmt.Errorf("VM start task %s status: %s", taskID, task.Status)
 				logger.Info("VM start task did not succeed", "task", taskID, "status", task.Status)
-				return nil, false, WithConditionUpdate(ctx, c, vatesMachine, err, metav1.ConditionFalse, "VmStartFailed")
+				return nil, false, WithConditionUpdate(ctx, c, xoMachine, err, metav1.ConditionFalse, "VmStartFailed")
 			}
 
 			vmWasStarted = true
@@ -392,7 +398,7 @@ func StartVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClien
 	vm, err := xoClient.Client.VM().GetByID(ctx, vm.ID)
 	if err != nil {
 		logger.Error(err, "Failed to re-fetch VM after start", "id", vm.ID.String())
-		return nil, false, WithConditionUpdate(ctx, c, vatesMachine, err, metav1.ConditionFalse, "VmRefetchFailed")
+		return nil, false, WithConditionUpdate(ctx, c, xoMachine, err, metav1.ConditionFalse, "VmRefetchFailed")
 	}
 
 	return vm, vmWasStarted, nil
@@ -450,8 +456,8 @@ func ResolveVMIP(ctx context.Context, xoClient *xok8scommon.XoClient, vm *payloa
 
 // ManageVIFs ensures all desired VIFs are connected and sets the allowed IP
 // range if configured.
-func ManageVIFs(ctx context.Context, xoClient *xok8scommon.XoClient, vatesMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM) error {
-	if vatesMachine.Spec.NetworkConfig == nil || len(vatesMachine.Spec.NetworkConfig.Networks) == 0 {
+func ManageVIFs(ctx context.Context, xoClient *xok8scommon.XoClient, xoMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM) error {
+	if xoMachine.Spec.NetworkConfig == nil || len(xoMachine.Spec.NetworkConfig.Networks) == 0 {
 		return nil
 	}
 
@@ -480,18 +486,18 @@ func ManageVIFs(ctx context.Context, xoClient *xok8scommon.XoClient, vatesMachin
 		}
 	}
 
-	if vatesMachine.Spec.NetworkConfig.AllowedIPRange != "" {
+	if xoMachine.Spec.NetworkConfig.AllowedIPRange != "" {
 		for _, vif := range existingVIFs {
 			if rawClient, ok := v1Client.(*xoclient.Client); ok {
 				var success bool
 				err := rawClient.Call("vif.set", map[string]any{
 					"id":           vif.Id,
-					"ipv4_allowed": vatesMachine.Spec.NetworkConfig.AllowedIPRange,
+					"ipv4_allowed": xoMachine.Spec.NetworkConfig.AllowedIPRange,
 				}, &success)
 				if err != nil {
 					logger.Error(err, "Failed to set allowed IP range on VIF (may not be supported by this XO version), continuing", "vifId", vif.Id)
 				} else {
-					logger.Info("Set allowed IP range on VIF", "vifId", vif.Id, "range", vatesMachine.Spec.NetworkConfig.AllowedIPRange)
+					logger.Info("Set allowed IP range on VIF", "vifId", vif.Id, "range", xoMachine.Spec.NetworkConfig.AllowedIPRange)
 				}
 			} else {
 				logger.Info("Cannot set allowed IP range: raw client access not available")
@@ -505,10 +511,10 @@ func ManageVIFs(ctx context.Context, xoClient *xok8scommon.XoClient, vatesMachin
 // WaitForVMReady waits for a recently-created or -started VM to become ready.
 // It starts the VM if needed, resolves the IP, applies a stabilization delay
 // when appropriate, manages VIFs, and marks the machine as Ready.
-func WaitForVMReady(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, vatesMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM) (reconcile.Result, error) {
+func WaitForVMReady(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, xoMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM) (reconcile.Result, error) {
 	logger := log.FromContext(ctx)
 
-	vm, _, err := StartVM(ctx, c, xoClient, vatesMachine, vm)
+	vm, _, err := StartVM(ctx, c, xoClient, xoMachine, vm)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -519,27 +525,27 @@ func WaitForVMReady(ctx context.Context, c client.Client, xoClient *xok8scommon.
 
 	if vmIP == "" {
 		logger.Info("VM started but IP not yet reported by guest tools, requeuing", "id", vm.ID.String())
-		if ue := UpdateCondition(ctx, c, vatesMachine, metav1.ConditionFalse, "WaitingForIPAddress", "VM is running, waiting for IP address from Xen guest tools"); ue != nil {
+		if ue := UpdateCondition(ctx, c, xoMachine, metav1.ConditionFalse, "WaitingForIPAddress", "VM is running, waiting for IP address from Xen guest tools"); ue != nil {
 			return reconcile.Result{}, ue
 		}
 		return reconcile.Result{RequeueAfter: 3 * time.Second}, nil
 	}
 
-	if err := ManageVIFs(ctx, xoClient, vatesMachine, vm); err != nil {
+	if err := ManageVIFs(ctx, xoClient, xoMachine, vm); err != nil {
 		logger.Error(err, "Failed to manage VIFs")
-		return reconcile.Result{}, WithConditionUpdate(ctx, c, vatesMachine, err, metav1.ConditionFalse, "VifManagementFailed")
+		return reconcile.Result{}, WithConditionUpdate(ctx, c, xoMachine, err, metav1.ConditionFalse, "VifManagementFailed")
 	}
 
-	vatesMachine.Status.Addresses = []corev1.NodeAddress{
+	xoMachine.Status.Addresses = []corev1.NodeAddress{
 		{
 			Type:    corev1.NodeInternalIP,
 			Address: vmIP,
 		},
 	}
 
-	vatesMachine.Status.Ready = true
-	vatesMachine.Status.Initialization = &infrastructurev1beta2.InitializationStatus{Provisioned: true}
-	if ue := UpdateCondition(ctx, c, vatesMachine, metav1.ConditionTrue, "VmReady", "VM is created, running and has an IP address"); ue != nil {
+	xoMachine.Status.Ready = true
+	xoMachine.Status.Initialization = &infrastructurev1beta2.InitializationStatus{Provisioned: true}
+	if ue := UpdateCondition(ctx, c, xoMachine, metav1.ConditionTrue, "VmReady", "VM is created, running and has an IP address"); ue != nil {
 		return reconcile.Result{}, ue
 	}
 

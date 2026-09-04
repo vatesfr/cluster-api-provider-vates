@@ -22,18 +22,18 @@ import (
 	xomachine "github.com/vatesfr/cluster-api-provider-vates/internal/controller/xomachine"
 )
 
-func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachine) (ctrl.Result, error) {
+func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	if err := r.ensureFinalizer(ctx, vatesMachine); err != nil {
+	if err := r.ensureFinalizer(ctx, xoMachine); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if result, err := r.tryFastPath(ctx, vatesMachine); result != nil {
+	if result, err := r.tryFastPath(ctx, xoMachine); result != nil {
 		return *result, err
 	}
 
-	bsResult, err := bootstrap.ResolveBootstrapData(ctx, r.Client, vatesMachine)
+	bsResult, err := bootstrap.ResolveBootstrapData(ctx, r.Client, xoMachine)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -41,10 +41,10 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, vatesMachine 
 		return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
 	}
 
-	xoCreds, err := r.resolveMachineCredentials(ctx, vatesMachine)
+	xoCreds, err := r.resolveMachineCredentials(ctx, xoMachine)
 	if err != nil {
 		logger.Error(err, "Failed to resolve XO credentials")
-		if updateErr := xomachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "CredentialsResolutionFailed", err.Error()); updateErr != nil {
+		if updateErr := xomachine.UpdateCondition(ctx, r.Client, xoMachine, metav1.ConditionFalse, "CredentialsResolutionFailed", err.Error()); updateErr != nil {
 			logger.Error(updateErr, "Failed to update condition")
 		}
 		return ctrl.Result{}, err
@@ -53,7 +53,7 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, vatesMachine 
 	xoClient, err := r.newXOClient(ctx, xoCreds)
 	if err != nil {
 		logger.Error(err, "Failed to create/connect XO client")
-		if updateErr := xomachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "XOConnectionFailed", err.Error()); updateErr != nil {
+		if updateErr := xomachine.UpdateCondition(ctx, r.Client, xoMachine, metav1.ConditionFalse, "XOConnectionFailed", err.Error()); updateErr != nil {
 			logger.Error(updateErr, "Failed to update condition")
 		}
 		return ctrl.Result{}, err
@@ -68,14 +68,14 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, vatesMachine 
 		Client:        r.Client,
 		XOClient:      xoClient,
 		Machine:       bsResult.Machine,
-		XOMachine:     vatesMachine,
+		XOMachine:     xoMachine,
 		BootstrapData: bsResult.Data,
 	}
 
 	cloudConfig, err := provider.BuildCloudConfig(ctx, deps)
 	if err != nil {
 		logger.Error(err, "Failed to build cloud config")
-		if updateErr := xomachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "CloudConfigBuildFailed", err.Error()); updateErr != nil {
+		if updateErr := xomachine.UpdateCondition(ctx, r.Client, xoMachine, metav1.ConditionFalse, "CloudConfigBuildFailed", err.Error()); updateErr != nil {
 			logger.Error(updateErr, "Failed to update condition")
 		}
 		return ctrl.Result{}, err
@@ -83,75 +83,75 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, vatesMachine 
 
 	networkConfig := provider.NetworkConfig(deps)
 
-	vmName := r.buildVMName(vatesMachine, bsResult)
+	vmName := r.buildVMName(xoMachine, bsResult)
 
-	templateID, err := xomachine.ResolveTemplateID(ctx, xoClient, vatesMachine.Spec.TemplateID, vatesMachine.Spec.TemplateName)
+	templateID, err := xomachine.ResolveTemplateID(ctx, xoClient, xoMachine.Spec.TemplateID, xoMachine.Spec.TemplateName)
 	if err != nil {
-		logger.Error(err, "Failed to find template", "templateID", vatesMachine.Spec.TemplateID, "templateName", vatesMachine.Spec.TemplateName)
-		if updateErr := xomachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "TemplateNotFound", err.Error()); updateErr != nil {
+		logger.Error(err, "Failed to find template", "templateID", xoMachine.Spec.TemplateID, "templateName", xoMachine.Spec.TemplateName)
+		if updateErr := xomachine.UpdateCondition(ctx, r.Client, xoMachine, metav1.ConditionFalse, "TemplateNotFound", err.Error()); updateErr != nil {
 			logger.Error(updateErr, "Failed to update condition")
 		}
 		return ctrl.Result{}, err
 	}
 
-	poolID, err := xomachine.ResolvePoolID(ctx, xoClient, vatesMachine.Spec.PoolID, vatesMachine.Spec.PoolName)
+	poolID, err := xomachine.ResolvePoolID(ctx, xoClient, xoMachine.Spec.PoolID, xoMachine.Spec.PoolName)
 	if err != nil {
-		logger.Error(err, "Failed to find pool", "poolID", vatesMachine.Spec.PoolID, "poolName", vatesMachine.Spec.PoolName)
-		if updateErr := xomachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "PoolNotFound", err.Error()); updateErr != nil {
+		logger.Error(err, "Failed to find pool", "poolID", xoMachine.Spec.PoolID, "poolName", xoMachine.Spec.PoolName)
+		if updateErr := xomachine.UpdateCondition(ctx, r.Client, xoMachine, metav1.ConditionFalse, "PoolNotFound", err.Error()); updateErr != nil {
 			logger.Error(updateErr, "Failed to update condition")
 		}
 		return ctrl.Result{}, err
 	}
 
 	var vm *payloads.VM
-	if vatesMachine.Status.ProviderID != nil && *vatesMachine.Status.ProviderID != "" {
-		vmID, parseErr := xok8scommon.GetVMID(*vatesMachine.Status.ProviderID)
+	if xoMachine.Status.ProviderID != nil && *xoMachine.Status.ProviderID != "" {
+		vmID, parseErr := xok8scommon.GetVMID(*xoMachine.Status.ProviderID)
 		if parseErr != nil {
 			logger.Error(parseErr, "Failed to parse existing providerID")
-			if updateErr := xomachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "InvalidProviderID", parseErr.Error()); updateErr != nil {
+			if updateErr := xomachine.UpdateCondition(ctx, r.Client, xoMachine, metav1.ConditionFalse, "InvalidProviderID", parseErr.Error()); updateErr != nil {
 				logger.Error(updateErr, "Failed to update condition")
 			}
 			return ctrl.Result{}, parseErr
 		}
-		vm, err = xomachine.LookupExistingVM(ctx, r.Client, xoClient, vatesMachine, vmID)
+		vm, err = xomachine.LookupExistingVM(ctx, r.Client, xoClient, xoMachine, vmID)
 	} else {
-		vm, err = xomachine.CreateVM(ctx, r.Client, xoClient, vatesMachine, poolID, templateID, cloudConfig, networkConfig, vmName)
+		vm, err = xomachine.CreateVM(ctx, r.Client, xoClient, xoMachine, poolID, templateID, cloudConfig, networkConfig, vmName, bsResult.BootstrapProvider)
 	}
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	xomachine.SetVMTags(ctx, vatesMachine, vm.ID, xoClient)
+	xomachine.SetVMTags(ctx, xoMachine, vm.ID, xoClient, bsResult.BootstrapProvider)
 
-	if !vatesMachine.Status.Ready {
-		result, waitErr := xomachine.WaitForVMReady(ctx, r.Client, xoClient, vatesMachine, vm)
+	if !xoMachine.Status.Ready {
+		result, waitErr := xomachine.WaitForVMReady(ctx, r.Client, xoClient, xoMachine, vm)
 		if waitErr != nil || !result.IsZero() {
 			return result, waitErr
 		}
 	}
 
-	if vatesMachine.Status.ProviderID != nil && *vatesMachine.Status.ProviderID != "" {
-		logger.Info("XOMachine reconciled", "name", vatesMachine.Name, "providerID", *vatesMachine.Status.ProviderID)
+	if xoMachine.Status.ProviderID != nil && *xoMachine.Status.ProviderID != "" {
+		logger.Info("XOMachine reconciled", "name", xoMachine.Name, "providerID", *xoMachine.Status.ProviderID)
 	}
 	return ctrl.Result{}, nil
 }
 
-func (r *XOMachineReconciler) ensureFinalizer(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachine) error {
-	if !controllerutil.AddFinalizer(vatesMachine, xoMachineFinalizer) {
+func (r *XOMachineReconciler) ensureFinalizer(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine) error {
+	if !controllerutil.AddFinalizer(xoMachine, xoMachineFinalizer) {
 		return nil
 	}
 	logger := log.FromContext(ctx)
-	if err := r.Update(ctx, vatesMachine); err != nil {
+	if err := r.Update(ctx, xoMachine); err != nil {
 		if !apierrors.IsConflict(err) {
 			logger.Error(err, "Failed to add finalizer")
 			return err
 		}
 		logger.Info("Conflict adding finalizer, retrying once")
-		if err := r.Get(ctx, types.NamespacedName{Namespace: vatesMachine.Namespace, Name: vatesMachine.Name}, vatesMachine); err != nil {
+		if err := r.Get(ctx, types.NamespacedName{Namespace: xoMachine.Namespace, Name: xoMachine.Name}, xoMachine); err != nil {
 			return err
 		}
-		if controllerutil.AddFinalizer(vatesMachine, xoMachineFinalizer) {
-			if err := r.Update(ctx, vatesMachine); err != nil {
+		if controllerutil.AddFinalizer(xoMachine, xoMachineFinalizer) {
+			if err := r.Update(ctx, xoMachine); err != nil {
 				logger.Error(err, "Failed to add finalizer after retry")
 				return err
 			}
@@ -160,16 +160,16 @@ func (r *XOMachineReconciler) ensureFinalizer(ctx context.Context, vatesMachine 
 	return nil
 }
 
-func (r *XOMachineReconciler) buildVMName(vatesMachine *infrastructurev1beta2.XOMachine, bsResult bootstrap.ResolveBootstrapDataResult) string {
+func (r *XOMachineReconciler) buildVMName(xoMachine *infrastructurev1beta2.XOMachine, bsResult bootstrap.ResolveBootstrapDataResult) string {
 	if bsResult.Machine == nil {
-		return vatesMachine.Spec.NamePrefix
+		return xoMachine.Spec.NamePrefix
 	}
 	cn := bsResult.Machine.Labels["cluster.x-k8s.io/cluster-name"]
 	if cn == "" {
-		return vatesMachine.Spec.NamePrefix
+		return xoMachine.Spec.NamePrefix
 	}
 	role := ""
-	np := vatesMachine.Spec.NamePrefix
+	np := xoMachine.Spec.NamePrefix
 	for _, s := range []string{"-cp", "-worker"} {
 		if strings.HasSuffix(np, s) {
 			role = s
@@ -194,35 +194,39 @@ func lastDashSegment(name string) string {
 
 // tryFastPath returns a non-nil result when the VM already has a providerID
 // and exists in XO, meaning we can skip directly to the existing-VM path.
-func (r *XOMachineReconciler) tryFastPath(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachine) (*ctrl.Result, error) {
-	if vatesMachine.Status.ProviderID == nil || *vatesMachine.Status.ProviderID == "" {
+func (r *XOMachineReconciler) tryFastPath(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine) (*ctrl.Result, error) {
+	if xoMachine.Status.ProviderID == nil || *xoMachine.Status.ProviderID == "" {
 		return nil, nil
 	}
 
-	if vatesMachine.Status.Ready {
-		if !isConditionTrue(vatesMachine, "VmReady") {
-			if ue := xomachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionTrue, "VmReady", "VM is created, running and has an IP address"); ue != nil {
+	if xoMachine.Status.Ready {
+		if !isConditionTrue(xoMachine, "VmReady") {
+			if ue := xomachine.UpdateCondition(ctx, r.Client, xoMachine, metav1.ConditionTrue, "VmReady", "VM is created, running and has an IP address"); ue != nil {
 				return &ctrl.Result{}, ue
 			}
 		}
 		// Best-effort: keep VM tags up to date (also tags VMs created before
 		// tagging was supported).
-		if xoCreds, err := r.resolveMachineCredentials(ctx, vatesMachine); err == nil {
+		if xoCreds, err := r.resolveMachineCredentials(ctx, xoMachine); err == nil {
 			if xoClient, err := r.newXOClient(ctx, xoCreds); err == nil && xoClient != nil {
-				if vmID, parseErr := xok8scommon.GetVMID(*vatesMachine.Status.ProviderID); parseErr == nil {
-					xomachine.SetVMTags(ctx, vatesMachine, vmID, xoClient)
+				if vmID, parseErr := xok8scommon.GetVMID(*xoMachine.Status.ProviderID); parseErr == nil {
+					providerName := bootstrap.DetectBootstrapProvider(xoMachine.Spec, nil)
+					if ownerMachine, err := xomachine.GetOwnerMachine(ctx, r.Client, xoMachine); err == nil {
+						providerName = bootstrap.DetectBootstrapProvider(xoMachine.Spec, ownerMachine)
+					}
+					xomachine.SetVMTags(ctx, xoMachine, vmID, xoClient, providerName)
 				}
 			}
 		}
 		return &ctrl.Result{}, nil
 	}
 
-	vmID, parseErr := xok8scommon.GetVMID(*vatesMachine.Status.ProviderID)
+	vmID, parseErr := xok8scommon.GetVMID(*xoMachine.Status.ProviderID)
 	if parseErr != nil {
 		return nil, nil
 	}
 
-	xoCreds, err := r.resolveMachineCredentials(ctx, vatesMachine)
+	xoCreds, err := r.resolveMachineCredentials(ctx, xoMachine)
 	if err != nil {
 		return nil, nil
 	}
@@ -241,25 +245,25 @@ func (r *XOMachineReconciler) tryFastPath(ctx context.Context, vatesMachine *inf
 		return nil, nil
 	}
 
-	result, err := r.reconcileExistingVM(ctx, vatesMachine, vm, xoClient)
+	result, err := r.reconcileExistingVM(ctx, xoMachine, vm, xoClient)
 	return &result, err
 }
 
 // reconcileExistingVM handles the fast-path when the VM already exists.
 // It skips bootstrap data assembly, cloud-config building, VM creation,
 // CPU/boot-order configuration, and providerID assignment — all already done.
-func (r *XOMachineReconciler) reconcileExistingVM(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM, xoClient *xok8scommon.XoClient) (ctrl.Result, error) {
+func (r *XOMachineReconciler) reconcileExistingVM(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM, xoClient *xok8scommon.XoClient) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	if vatesMachine.Status.Ready {
-		if vatesMachine.Status.ProviderID != nil && *vatesMachine.Status.ProviderID != "" {
-			logger.Info("XOMachine reconciled (fast path)", "name", vatesMachine.Name, "providerID", *vatesMachine.Status.ProviderID)
+	if xoMachine.Status.Ready {
+		if xoMachine.Status.ProviderID != nil && *xoMachine.Status.ProviderID != "" {
+			logger.Info("XOMachine reconciled (fast path)", "name", xoMachine.Name, "providerID", *xoMachine.Status.ProviderID)
 		}
 		return ctrl.Result{}, nil
 	}
 
 	var err error
-	vm, _, err = xomachine.StartVM(ctx, r.Client, xoClient, vatesMachine, vm)
+	vm, _, err = xomachine.StartVM(ctx, r.Client, xoClient, xoMachine, vm)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -268,58 +272,58 @@ func (r *XOMachineReconciler) reconcileExistingVM(ctx context.Context, vatesMach
 
 	if vmIP == "" {
 		logger.Info("VM existing but IP not yet reported, requeuing", "id", vm.ID.String())
-		if ue := xomachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "WaitingForIPAddress", "VM is running, waiting for IP address from Xen guest tools"); ue != nil {
+		if ue := xomachine.UpdateCondition(ctx, r.Client, xoMachine, metav1.ConditionFalse, "WaitingForIPAddress", "VM is running, waiting for IP address from Xen guest tools"); ue != nil {
 			return ctrl.Result{}, ue
 		}
 		return ctrl.Result{RequeueAfter: 3 * time.Second}, nil
 	}
 
-	if err := xomachine.ManageVIFs(ctx, xoClient, vatesMachine, vm); err != nil {
+	if err := xomachine.ManageVIFs(ctx, xoClient, xoMachine, vm); err != nil {
 		logger.Error(err, "Failed to manage VIFs")
-		if ue := xomachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionFalse, "VifManagementFailed", err.Error()); ue != nil {
+		if ue := xomachine.UpdateCondition(ctx, r.Client, xoMachine, metav1.ConditionFalse, "VifManagementFailed", err.Error()); ue != nil {
 			return ctrl.Result{}, ue
 		}
 		return ctrl.Result{}, err
 	}
 
-	vatesMachine.Status.Addresses = []corev1.NodeAddress{
+	xoMachine.Status.Addresses = []corev1.NodeAddress{
 		{
 			Type:    corev1.NodeInternalIP,
 			Address: vmIP,
 		},
 	}
-	vatesMachine.Status.Ready = true
-	vatesMachine.Status.Initialization = &infrastructurev1beta2.InitializationStatus{Provisioned: true}
-	if ue := xomachine.UpdateCondition(ctx, r.Client, vatesMachine, metav1.ConditionTrue, "VmReady", "VM is created, running and has an IP address"); ue != nil {
+	xoMachine.Status.Ready = true
+	xoMachine.Status.Initialization = &infrastructurev1beta2.InitializationStatus{Provisioned: true}
+	if ue := xomachine.UpdateCondition(ctx, r.Client, xoMachine, metav1.ConditionTrue, "VmReady", "VM is created, running and has an IP address"); ue != nil {
 		return ctrl.Result{}, ue
 	}
 
 	return ctrl.Result{}, nil
 }
 
-func (r *XOMachineReconciler) reconcileDelete(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachine) (ctrl.Result, error) {
+func (r *XOMachineReconciler) reconcileDelete(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	if !controllerutil.ContainsFinalizer(vatesMachine, xoMachineFinalizer) {
+	if !controllerutil.ContainsFinalizer(xoMachine, xoMachineFinalizer) {
 		return ctrl.Result{}, nil
 	}
 
-	if vatesMachine.Status.ProviderID != nil && *vatesMachine.Status.ProviderID != "" {
-		vmID, err := xok8scommon.GetVMID(*vatesMachine.Status.ProviderID)
+	if xoMachine.Status.ProviderID != nil && *xoMachine.Status.ProviderID != "" {
+		vmID, err := xok8scommon.GetVMID(*xoMachine.Status.ProviderID)
 		if err != nil {
 			logger.Error(err, "Failed to parse providerID, removing finalizer")
-			controllerutil.RemoveFinalizer(vatesMachine, xoMachineFinalizer)
-			if updateErr := r.Update(ctx, vatesMachine); updateErr != nil {
+			controllerutil.RemoveFinalizer(xoMachine, xoMachineFinalizer)
+			if updateErr := r.Update(ctx, xoMachine); updateErr != nil {
 				return ctrl.Result{}, updateErr
 			}
 			return ctrl.Result{}, nil
 		}
 
-		xoCreds, err := r.resolveMachineCredentials(ctx, vatesMachine)
+		xoCreds, err := r.resolveMachineCredentials(ctx, xoMachine)
 		if err != nil {
 			logger.Error(err, "Failed to resolve XO credentials for VM deletion, removing finalizer")
-			controllerutil.RemoveFinalizer(vatesMachine, xoMachineFinalizer)
-			if updateErr := r.Update(ctx, vatesMachine); updateErr != nil {
+			controllerutil.RemoveFinalizer(xoMachine, xoMachineFinalizer)
+			if updateErr := r.Update(ctx, xoMachine); updateErr != nil {
 				return ctrl.Result{}, updateErr
 			}
 			return ctrl.Result{}, nil
@@ -332,8 +336,8 @@ func (r *XOMachineReconciler) reconcileDelete(ctx context.Context, vatesMachine 
 			} else {
 				logger.Info("XO credentials not configured for deletion, removing finalizer")
 			}
-			controllerutil.RemoveFinalizer(vatesMachine, xoMachineFinalizer)
-			if updateErr := r.Update(ctx, vatesMachine); updateErr != nil {
+			controllerutil.RemoveFinalizer(xoMachine, xoMachineFinalizer)
+			if updateErr := r.Update(ctx, xoMachine); updateErr != nil {
 				return ctrl.Result{}, updateErr
 			}
 			return ctrl.Result{}, nil
@@ -374,8 +378,8 @@ func (r *XOMachineReconciler) reconcileDelete(ctx context.Context, vatesMachine 
 		}
 	}
 
-	controllerutil.RemoveFinalizer(vatesMachine, xoMachineFinalizer)
-	if err := r.Update(ctx, vatesMachine); err != nil {
+	controllerutil.RemoveFinalizer(xoMachine, xoMachineFinalizer)
+	if err := r.Update(ctx, xoMachine); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -387,21 +391,21 @@ func (r *XOMachineReconciler) reconcileDelete(ctx context.Context, vatesMachine 
 // 1. XOMachine's own identityRef
 // 2. Owner XOCluster's identityRef (looked up via the owner Machine's cluster label)
 // 3. Global controller credentials (r.XoCreds)
-func (r *XOMachineReconciler) resolveMachineCredentials(ctx context.Context, vatesMachine *infrastructurev1beta2.XOMachine) (*xok8scommon.XoConfig, error) {
+func (r *XOMachineReconciler) resolveMachineCredentials(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine) (*xok8scommon.XoConfig, error) {
 	// 1. Machine-level identityRef
-	if vatesMachine.Spec.IdentityRef != nil {
-		return ResolveXOConfig(ctx, r.Client, vatesMachine.Namespace, vatesMachine.Spec.IdentityRef, nil)
+	if xoMachine.Spec.IdentityRef != nil {
+		return ResolveXOConfig(ctx, r.Client, xoMachine.Namespace, xoMachine.Spec.IdentityRef, nil)
 	}
 
 	// 2. Try to look up the owner VatesCluster via the Machine's cluster label
-	if ownerRef := metav1.GetControllerOf(vatesMachine); ownerRef != nil && ownerRef.Kind == "Machine" {
+	if ownerRef := metav1.GetControllerOf(xoMachine); ownerRef != nil && ownerRef.Kind == "Machine" {
 		machine := &clusterv1.Machine{}
-		if err := r.Get(ctx, types.NamespacedName{Namespace: vatesMachine.Namespace, Name: ownerRef.Name}, machine); err == nil {
+		if err := r.Get(ctx, types.NamespacedName{Namespace: xoMachine.Namespace, Name: ownerRef.Name}, machine); err == nil {
 			clusterName := machine.Labels[clusterv1.ClusterNameLabel]
 			if clusterName != "" {
-				vatesCluster, err := xomachine.GetXOCluster(ctx, r.Client, vatesMachine.Namespace, clusterName)
-				if err == nil && vatesCluster != nil && vatesCluster.Spec.IdentityRef != nil {
-					return ResolveXOConfig(ctx, r.Client, vatesMachine.Namespace, vatesCluster.Spec.IdentityRef, nil)
+				xoCluster, err := xomachine.GetXOCluster(ctx, r.Client, xoMachine.Namespace, clusterName)
+				if err == nil && xoCluster != nil && xoCluster.Spec.IdentityRef != nil {
+					return ResolveXOConfig(ctx, r.Client, xoMachine.Namespace, xoCluster.Spec.IdentityRef, nil)
 				}
 			}
 		}
@@ -417,8 +421,8 @@ func (r *XOMachineReconciler) resolveMachineCredentials(ctx context.Context, vat
 }
 
 // isConditionTrue returns true when the XOMachine has a Ready condition with the given reason and status True.
-func isConditionTrue(vatesMachine *infrastructurev1beta2.XOMachine, reason string) bool {
-	for _, c := range vatesMachine.Status.Conditions {
+func isConditionTrue(xoMachine *infrastructurev1beta2.XOMachine, reason string) bool {
+	for _, c := range xoMachine.Status.Conditions {
 		if c.Type == "Ready" && c.Status == metav1.ConditionTrue && c.Reason == reason {
 			return true
 		}
