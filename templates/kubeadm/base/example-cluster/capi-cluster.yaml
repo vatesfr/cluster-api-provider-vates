@@ -5,7 +5,7 @@ metadata:
 spec:
   topology:
     classRef:
-      name: vates-rhel-prefilled
+      name: vates-almalinux-prefilled
     version: ""
     variables:
       - name: controlPlaneEndpoint
@@ -21,6 +21,6 @@ spec:
       replicas: 3
     workers:
       machineDeployments:
-        - class: worker-prefilled
+        - class: worker-almalinux-prefilled
           name: worker-md-0
           replicas: 2

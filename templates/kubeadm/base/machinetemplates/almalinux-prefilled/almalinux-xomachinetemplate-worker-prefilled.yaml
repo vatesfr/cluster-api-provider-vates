@@ -1,7 +1,7 @@
 apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
 kind: XOMachineTemplate
 metadata:
-  name: rhel-worker-from-scratch
+  name: almalinux-worker-prefilled
 spec:
   template:
     spec:

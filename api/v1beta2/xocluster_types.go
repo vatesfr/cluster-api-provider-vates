@@ -34,6 +34,35 @@ type XOClusterSpec struct {
 	// If not set, falls back to the controller's global credentials.
 	// +optional
 	IdentityRef *corev1.LocalObjectReference `json:"identityRef,omitempty"`
+
+	// Addons selects which workload cluster addons the controller installs
+	// via ClusterResourceSet. When nil, defaults to CCM and CSI enabled and
+	// no CNI.
+	// +optional
+	Addons *AddonsSpec `json:"addons,omitempty"`
+}
+
+// AddonsSpec selects which addons the controller installs in the workload
+// cluster via ClusterResourceSet. Each addon is optional and independently
+// controllable.
+type AddonsSpec struct {
+	// CCM installs the Xen Orchestra cloud-controller-manager (node addresses,
+	// service load balancers). Defaults to true.
+	// +optional
+	// +kubebuilder:default=true
+	CCM *bool `json:"ccm,omitempty"`
+
+	// CSI installs the Xen Orchestra CSI driver. Defaults to true.
+	// +optional
+	// +kubebuilder:default=true
+	CSI *bool `json:"csi,omitempty"`
+
+	// CNI selects the Container Network Interface installed via
+	// ClusterResourceSet. Supported values: "none", "cilium". When unset
+	// (or "none"), no CNI is installed by the controller.
+	// +optional
+	// +kubebuilder:validation:Enum=none;cilium
+	CNI *string `json:"cni,omitempty"`
 }
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.

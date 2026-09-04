@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,9 +30,11 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	addonsv1 "sigs.k8s.io/cluster-api/api/addons/v1beta2"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
 	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
+	xok8scommon "github.com/vatesfr/xenorchestra-k8s-common"
 )
 
 var _ = Describe("XOCluster Controller", func() {
@@ -138,5 +141,116 @@ var _ = Describe("ensureClusterNameLabel", func() {
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Namespace: "default", Name: "my-cluster"}, updated)).To(Succeed())
 		Expect(updated.Labels[clusterv1.ClusterNameLabel]).To(Equal("my-cluster"))
 		Expect(updated.ResourceVersion).To(Equal(cluster.ResourceVersion))
+	})
+})
+
+var _ = Describe("addons", func() {
+	var (
+		scheme *runtime.Scheme
+		ctx    context.Context
+		r      *XOClusterReconciler
+	)
+
+	BeforeEach(func() {
+		scheme = runtime.NewScheme()
+		Expect(clusterv1.AddToScheme(scheme)).To(Succeed())
+		Expect(addonsv1.AddToScheme(scheme)).To(Succeed())
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		ctx = context.Background()
+		r = &XOClusterReconciler{}
+	})
+
+	Describe("defaultAddons", func() {
+		It("defaults to CCM+CSI enabled and no CNI when nil", func() {
+			a := defaultAddons(nil)
+			Expect(*a.CCM).To(BeTrue())
+			Expect(*a.CSI).To(BeTrue())
+			Expect(*a.CNI).To(Equal("none"))
+		})
+
+		It("fills only the unset fields", func() {
+			cni := "cilium"
+			a := defaultAddons(&infrastructurev1beta2.AddonsSpec{CNI: &cni})
+			Expect(*a.CCM).To(BeTrue())
+			Expect(*a.CSI).To(BeTrue())
+			Expect(*a.CNI).To(Equal("cilium"))
+		})
+	})
+
+	Describe("ensureAddon / removeAddon", func() {
+		It("creates a ConfigMap and a ClusterResourceSet for an addon", func() {
+			r.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			Expect(r.ensureAddon(ctx, "my-cluster", "cni", "cni-deployment-my-cluster", "cni-manifests-my-cluster", "ApplyOnce", "---\nkind: ConfigMap\n")).To(Succeed())
+
+			cm := &corev1.ConfigMap{}
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "cni-manifests-my-cluster"}, cm)).To(Succeed())
+			Expect(cm.Data["cni.yaml"]).To(ContainSubstring("kind: ConfigMap"))
+
+			crs := &addonsv1.ClusterResourceSet{}
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "cni-deployment-my-cluster"}, crs)).To(Succeed())
+			Expect(crs.Spec.Strategy).To(Equal("ApplyOnce"))
+			Expect(crs.Spec.Resources).To(Equal([]addonsv1.ResourceRef{{Kind: "ConfigMap", Name: "cni-manifests-my-cluster"}}))
+			Expect(crs.Spec.ClusterSelector.MatchLabels).To(HaveKeyWithValue("cluster.x-k8s.io/cluster-name", "my-cluster"))
+		})
+
+		It("removes the ConfigMap and ClusterResourceSet of a disabled addon", func() {
+			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "csi-manifests-my-cluster", Namespace: "default"}, Data: map[string]string{"csi.yaml": "x"}}
+			crs := &addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: "csi-deployment-my-cluster", Namespace: "default"}}
+			r.Client = fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm, crs).Build()
+
+			Expect(r.removeAddon(ctx, "my-cluster", "csi", "csi-deployment-my-cluster", "csi-manifests-my-cluster")).To(Succeed())
+
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "csi-manifests-my-cluster"}, &corev1.ConfigMap{})).NotTo(Succeed())
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "csi-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{})).NotTo(Succeed())
+		})
+
+		It("is a no-op when removing an addon that was never created", func() {
+			r.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
+			Expect(r.removeAddon(ctx, "my-cluster", "cni", "cni-deployment-my-cluster", "cni-manifests-my-cluster")).To(Succeed())
+		})
+	})
+
+	Describe("reconcileAddons", func() {
+		var vatesCluster *infrastructurev1beta2.XOCluster
+
+		BeforeEach(func() {
+			vatesCluster = &infrastructurev1beta2.XOCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "default"},
+			}
+		})
+
+		It("creates ccm, csi and cni ClusterResourceSets when all addons enabled", func() {
+			r.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
+			cni := "cilium"
+			vatesCluster.Spec.Addons = &infrastructurev1beta2.AddonsSpec{CNI: &cni}
+
+			Expect(r.reconcileAddons(ctx, vatesCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok", Insecure: true})).To(Succeed())
+
+			for _, name := range []string{"ccm-deployment-my-cluster", "csi-deployment-my-cluster", "cni-deployment-my-cluster"} {
+				crs := &addonsv1.ClusterResourceSet{}
+				Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: name}, crs)).To(Succeed(), "expected %s", name)
+			}
+		})
+
+		It("does not create the cni ClusterResourceSet when cni is none", func() {
+			r.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			Expect(r.reconcileAddons(ctx, vatesCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok", Insecure: true})).To(Succeed())
+
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "cni-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{})).NotTo(Succeed())
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "ccm-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{})).To(Succeed())
+		})
+
+		It("does not create the ccm ClusterResourceSet when ccm is disabled", func() {
+			r.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
+			disabled := false
+			vatesCluster.Spec.Addons = &infrastructurev1beta2.AddonsSpec{CCM: &disabled}
+
+			Expect(r.reconcileAddons(ctx, vatesCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok", Insecure: true})).To(Succeed())
+
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "ccm-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{})).NotTo(Succeed())
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "csi-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{})).To(Succeed())
+		})
 	})
 })

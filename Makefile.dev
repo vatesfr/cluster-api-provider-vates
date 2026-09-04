@@ -1,5 +1,14 @@
 CONTAINER_TOOL ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
-IMG ?= ghcr.io/vatesfr/cluster-api-provider-vates:latest
+NS ?= capi-system
+DEPLOY ?= vates-capi-controller-manager
+
+# A unique dev tag per invocation so kubelet is forced to pull the fresh image
+# (a plain :latest + imagePullPolicy=IfNotPresent does not re-resolve).
+ifeq ($(origin IMG), undefined)
+IMG := ghcr.io/vatesfr/cluster-api-provider-vates:dev-$(shell date +%s)
+endif
+
+.PHONY: build push deploy-image ensure-image restart dev
 
 build:
 	$(MAKE) docker-build IMG=$(IMG)
@@ -9,21 +18,31 @@ push:
 	$(CONTAINER_TOOL) save $(IMG) -o /tmp/vates-capi-dev.tar && \
 	kind load image-archive /tmp/vates-capi-dev.tar --name kind
 
+# Image currently configured in the deployment.
+deploy-image:
+	@kubectl -n $(NS) get deployment/$(DEPLOY) -o jsonpath='{.spec.template.spec.containers[0].image}'
+
 ensure-image:
-	@current=$$(kubectl get deployment/vates-capi-controller-manager -n capi-system -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo ""); \
-	if [ -z "$$current" ]; then \
-		echo "Deployment not found, skipping image check"; \
-	elif [ "$$current" != "$(IMG)" ]; then \
-		echo "Image mismatch: current=$$current, expected=$(IMG)"; \
-		kubectl set image deployment/vates-capi-controller-manager -n capi-system manager=$(IMG); \
-		kubectl rollout restart deployment/vates-capi-controller-manager -n capi-system; \
-		kubectl rollout status deployment/vates-capi-controller-manager -n capi-system --timeout=5m; \
+	@current=$$( $(MAKE) -s deploy-image ); \
+	echo "built   : $(IMG)"; \
+	echo "deployed: $$current"; \
+	if [ "$$current" != "$(IMG)" ]; then \
+		echo ">> setting deployment image to $(IMG)"; \
+		kubectl -n $(NS) set image deployment/$(DEPLOY) manager=$(IMG); \
+	fi; \
+	kubectl -n $(NS) rollout restart deployment/$(DEPLOY); \
+	kubectl -n $(NS) rollout status deployment/$(DEPLOY) --timeout=5m; \
+	pod=$$(kubectl -n $(NS) get pod -l app.kubernetes.io/name=vates-capi -o jsonpath='{.items[0].metadata.name}'); \
+	run=$$(kubectl -n $(NS) get pod $$pod -o jsonpath='{.status.containerStatuses[0].image}'); \
+	echo "running : $$run"; \
+	if [ "$$run" = "$(IMG)" ]; then \
+		echo "OK: deployment runs $(IMG)"; \
 	else \
-		echo "Image OK: $(IMG)"; \
+		echo "WARN: pod runs $$run, expected $(IMG)"; \
 	fi
 
 restart:
-	kubectl rollout restart deployment/vates-capi-controller-manager -n capi-system
-	kubectl rollout status deployment/vates-capi-controller-manager -n capi-system --timeout=5m
+	kubectl -n $(NS) rollout restart deployment/$(DEPLOY)
+	kubectl -n $(NS) rollout status deployment/$(DEPLOY) --timeout=5m
 
 dev: build push ensure-image

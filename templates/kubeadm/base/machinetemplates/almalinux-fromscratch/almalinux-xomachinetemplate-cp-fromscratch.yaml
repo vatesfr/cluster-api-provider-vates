@@ -1,7 +1,7 @@
 apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
 kind: XOMachineTemplate
 metadata:
-  name: rhel-cp-from-scratch
+  name: almalinux-cp-fromscratch
 spec:
   template:
     spec:

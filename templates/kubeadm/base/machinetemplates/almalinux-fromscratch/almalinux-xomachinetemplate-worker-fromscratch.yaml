@@ -1,11 +1,11 @@
 apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
 kind: XOMachineTemplate
 metadata:
-  name: rhel-cp-prefilled
+  name: almalinux-worker-fromscratch
 spec:
   template:
     spec:
-      namePrefix: cp
+      namePrefix: worker
       templateID: <your-xo-template-uuid>
       poolID: <your-xo-pool-uuid>
       resourceSet:
