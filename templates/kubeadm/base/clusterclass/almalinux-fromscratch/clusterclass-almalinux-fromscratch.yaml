@@ -1,0 +1,150 @@
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: ClusterClass
+metadata:
+  name: vates-almalinux-fromscratch
+spec:
+  variables:
+    - name: controlPlaneEndpoint
+      required: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            host:
+              type: string
+            port:
+              type: integer
+              default: 6443
+            subnet:
+              type: integer
+              minimum: 1
+              maximum: 32
+          required:
+            - host
+    - name: vmNamePrefix
+      required: true
+      schema:
+        openAPIV3Schema:
+          type: string
+    - name: controlPlaneLB
+      required: false
+      schema:
+        openAPIV3Schema:
+          type: string
+          enum:
+            - kube-vip
+  patches:
+    - name: controlPlaneEndpointPatch
+      definitions:
+        - selector:
+            apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+            kind: XOClusterTemplate
+            matchResources:
+              infrastructureCluster: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/controlPlaneEndpoint
+              valueFrom:
+                variable: controlPlaneEndpoint
+    - name: cpNamePrefixPatch
+      definitions:
+        - selector:
+            apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+            kind: XOMachineTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: replace
+              path: /spec/template/spec/namePrefix
+              valueFrom:
+                template: '{{ .vmNamePrefix }}-cp'
+    - name: workerNamePrefixPatch
+      definitions:
+        - selector:
+            apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+            kind: XOMachineTemplate
+            matchResources:
+              machineDeploymentClass:
+                names:
+                  - worker-almalinux-fromscratch
+          jsonPatches:
+            - op: replace
+              path: /spec/template/spec/namePrefix
+              valueFrom:
+                template: '{{ .vmNamePrefix }}-worker'
+    - name: workerArpingPatch
+      definitions:
+        - selector:
+            apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+            kind: KubeadmConfigTemplate
+            matchResources:
+              machineDeploymentClass:
+                names:
+                  - worker-almalinux-fromscratch
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/preKubeadmCommands/-
+              valueFrom:
+                template: arping -I eth0 -c 3 {{ .controlPlaneEndpoint.host }} 2>/dev/null || true
+    - name: kubevipPatch
+      definitions:
+        - selector:
+            apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+            kind: KubeadmControlPlaneTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/kubeadmConfigSpec/clusterConfiguration/apiServer/certSANs/-
+              valueFrom:
+                variable: controlPlaneEndpoint.host
+        - selector:
+            apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+            kind: XOClusterTemplate
+            matchResources:
+              infrastructureCluster: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/controlPlaneLB
+              valueFrom:
+                variable: controlPlaneLB
+  infrastructure:
+    templateRef:
+      apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+      kind: XOClusterTemplate
+      name: almalinux-cluster
+  controlPlane:
+    templateRef:
+      apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+      kind: KubeadmControlPlaneTemplate
+      name: almalinux-fromscratch-control-plane
+    machineInfrastructure:
+      templateRef:
+        apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+        kind: XOMachineTemplate
+        name: almalinux-cp-fromscratch
+  workers:
+    machineDeployments:
+      - class: worker-almalinux-fromscratch
+        healthCheck:
+          checks:
+            nodeStartupTimeoutSeconds: 600
+            unhealthyNodeConditions:
+              - type: Ready
+                status: "False"
+                timeoutSeconds: 300
+              - type: Ready
+                status: Unknown
+                timeoutSeconds: 300
+          remediation:
+            maxInFlight: 1
+        bootstrap:
+          templateRef:
+            apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+            kind: KubeadmConfigTemplate
+            name: almalinux-fromscratch-worker
+        infrastructure:
+          templateRef:
+            apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+            kind: XOMachineTemplate
+            name: almalinux-worker-fromscratch

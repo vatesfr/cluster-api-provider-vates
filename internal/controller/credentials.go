@@ -10,6 +10,10 @@ import (
 	xok8scommon "github.com/vatesfr/xenorchestra-k8s-common"
 )
 
+// trueStr is the string representation of a boolean true used when parsing the
+// identity secret and rendering the CCM manifest.
+const trueStr = "true"
+
 // ResolveXOConfig reads the Secret referenced by identityRef and returns an
 // XoConfig. If identityRef is nil, returns fallback.
 func ResolveXOConfig(ctx context.Context, c client.Client, namespace string, identityRef *corev1.LocalObjectReference, fallback *xok8scommon.XoConfig) (*xok8scommon.XoConfig, error) {
@@ -37,7 +41,7 @@ func ResolveXOConfig(ctx context.Context, c client.Client, namespace string, ide
 	}
 
 	if v := secret.Data["insecure"]; len(v) > 0 {
-		cfg.Insecure = string(v) == "true"
+		cfg.Insecure = string(v) == trueStr
 	}
 
 	return cfg, nil

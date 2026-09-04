@@ -1,0 +1,20 @@
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOMachineTemplate
+metadata:
+  name: almalinux-worker-fromscratch
+spec:
+  template:
+    spec:
+      namePrefix: worker
+      templateID: <your-xo-template-uuid>
+      poolID: <your-xo-pool-uuid>
+      resourceSet:
+        cpus: 4
+        memory: "8Gi"
+        diskSize: "30Gi"
+      networkConfig:
+        networks:
+          # Use networkID (UUID from XO) for direct, dependency-free lookups.
+          # Alternatively, use "name" (V1 client) if you don't have the UUID:
+          #   - name: "Pool-wide network associated with eth0 on VLAN60"
+          - networkID: <your-xo-network-uuid>

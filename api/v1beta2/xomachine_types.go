@@ -46,6 +46,15 @@ type XOMachineSpec struct {
 	// +optional
 	FailureDomain *string `json:"failureDomain,omitempty"`
 
+	// BootstrapProvider selects the bootstrap provider for this machine.
+	// Supported values: "kubeadm" (default), "talos".
+	// When "talos", the controller passes bootstrap data directly to XO
+	// without cloud-init transformation, SSH key injection, or kube-vip.
+	// +optional
+	// +kubebuilder:validation:Enum=kubeadm;talos
+	// +kubebuilder:default=kubeadm
+	BootstrapProvider string `json:"bootstrapProvider,omitempty"`
+
 	// BootstrapData is the bootstrap data (cloud-init) to inject into the VM.
 	// If empty, the controller will try to read it from the owner Machine's bootstrap secret.
 	// +optional

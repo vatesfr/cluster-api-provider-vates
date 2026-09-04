@@ -46,19 +46,19 @@ var _ reconcile.Reconciler = (*XOMachineReconciler)(nil)
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
 
 func (r *XOMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	vatesMachine := &infrastructurev1beta2.XOMachine{}
-	if err := r.Get(ctx, req.NamespacedName, vatesMachine); err != nil {
+	xoMachine := &infrastructurev1beta2.XOMachine{}
+	if err := r.Get(ctx, req.NamespacedName, xoMachine); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
 
-	if !vatesMachine.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, vatesMachine)
+	if !xoMachine.DeletionTimestamp.IsZero() {
+		return r.reconcileDelete(ctx, xoMachine)
 	}
 
-	return r.reconcileNormal(ctx, vatesMachine)
+	return r.reconcileNormal(ctx, xoMachine)
 }
 
 // SetupWithManager sets up the controller with the Manager.

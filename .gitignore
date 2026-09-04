@@ -33,4 +33,7 @@ go.work
 examples/
 misc/
 scripts/
-docs/
+notes/
+
+# Local environment overlays (real XO resource UUIDs — not for distribution)
+templates/*/overlays/

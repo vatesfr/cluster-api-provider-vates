@@ -1,0 +1,315 @@
+# Required variables (export in environment):
+#   CP_HOST             - Control plane VIP address (e.g. 10.30.139.10)
+#   CP_PORT             - API server port (e.g. 6443)
+#   CP_LB               - Load balancer type: "kube-vip" or "" (empty = no LB)
+#   CP_SUBNET           - CIDR subnet mask for the VIP (e.g. 16, 24)
+#   VM_NAME_PREFIX      - Prefix for VM names (e.g. my-cluster)
+#   KUBERNETES_VERSION  - Kubernetes version (e.g. v1.36.1)
+#   XO_TEMPLATE_UUID    - UUID of the Debian 13 VM template (debian-fromscratch)
+#   XO_POOL_UUID        - UUID of your Xen Orchestra pool
+#   XO_NETWORK_UUID     - UUID of your Xen Orchestra network
+#   XO_CNI              - CNI installed by the provider via ClusterResourceSet
+#                         (default: cilium; set to "none" to install manually)
+#
+# Optional variables (clusterctl built-in defaults — not the base/ replicas):
+#   CLUSTER_NAME                - Cluster name (default: name argument)
+#   NAMESPACE                   - Target namespace (default: current namespace)
+#   CONTROL_PLANE_MACHINE_COUNT - Control plane replicas (default: 1)
+#   WORKER_MACHINE_COUNT        - Worker replicas (default: 0)
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - 172.31.0.0/16
+    services:
+      cidrBlocks:
+        - 192.168.0.0/16
+    serviceDomain: cluster.local
+  controlPlaneRef:
+    apiGroup: controlplane.cluster.x-k8s.io
+    kind: KubeadmControlPlane
+    name: ${CLUSTER_NAME}-cp
+  infrastructureRef:
+    apiGroup: vates.infrastructure.cluster.x-k8s.io
+    kind: XOCluster
+    name: ${CLUSTER_NAME}
+---
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOCluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  controlPlaneEndpoint:
+    host: ${CP_HOST}
+    port: ${CP_PORT}
+    subnet: ${CP_SUBNET}
+  controlPlaneLB: ${CP_LB}
+  injectSSHKeys: true
+  addons:
+    cni: ${XO_CNI:-cilium}
+---
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-cp
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      namePrefix: ${VM_NAME_PREFIX}-cp
+      templateID: ${XO_TEMPLATE_UUID}
+      poolID: ${XO_POOL_UUID}
+      resourceSet:
+        cpus: 4
+        memory: "8Gi"
+        diskSize: "30Gi"
+      networkConfig:
+        networks:
+          - networkID: ${XO_NETWORK_UUID}
+---
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      namePrefix: ${VM_NAME_PREFIX}-worker
+      templateID: ${XO_TEMPLATE_UUID}
+      poolID: ${XO_POOL_UUID}
+      resourceSet:
+        cpus: 4
+        memory: "8Gi"
+        diskSize: "30Gi"
+      networkConfig:
+        networks:
+          - networkID: ${XO_NETWORK_UUID}
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlane
+metadata:
+  name: ${CLUSTER_NAME}-cp
+  namespace: ${NAMESPACE}
+spec:
+  version: ${KUBERNETES_VERSION}
+  replicas: ${CONTROL_PLANE_MACHINE_COUNT}
+  machineTemplate:
+    metadata:
+      labels: {}
+    spec:
+      infrastructureRef:
+        apiGroup: vates.infrastructure.cluster.x-k8s.io
+        kind: XOMachineTemplate
+        name: ${CLUSTER_NAME}-cp
+  kubeadmConfigSpec:
+    clusterConfiguration:
+      apiServer:
+        certSANs:
+          - localhost
+          - 127.0.0.1
+          - ${CP_HOST}
+    initConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          - name: cgroup-driver
+            value: systemd
+          - name: cloud-provider
+            value: external
+    joinConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          - name: cgroup-driver
+            value: systemd
+          - name: cloud-provider
+            value: external
+    preKubeadmCommands:
+      - |
+        IP=$(hostname -I | awk '{print $1}')
+        hostnamectl set-hostname "cp-$(echo "$IP" | tr '.' '-')"
+        echo "$IP $(hostname) $(hostname -s)" >> /etc/hosts
+      - printf 'overlay\nbr_netfilter\n' > /etc/modules-load.d/k8s.conf
+      - modprobe overlay; modprobe br_netfilter
+      - |
+        printf 'net.bridge.bridge-nf-call-iptables  = 1\nnet.bridge.bridge-nf-call-ip6tables = 1\nnet.ipv4.ip_forward                 = 1\nnet.ipv4.conf.all.rp_filter         = 0\nnet.ipv4.conf.eth0.rp_filter        = 0\n' > /etc/sysctl.d/k8s.conf
+      - sysctl --system
+      - swapoff -a; sed -i '/ swap /d' /etc/fstab 2>/dev/null; true
+      - |
+        systemctl stop unattended-upgrades 2>/dev/null || true
+        systemctl disable unattended-upgrades 2>/dev/null || true
+        pkill -f unattended-upgr 2>/dev/null || true
+        i=0
+        while pgrep -x apt >/dev/null 2>&1 || pgrep -x apt-get >/dev/null 2>&1 || pgrep -x dpkg >/dev/null 2>&1; do
+          i=$((i+1)); [ $i -gt 120 ] && break; sleep 2
+        done
+        true
+      - apt-get update
+      - apt-get install -y ca-certificates curl gpg
+      - |
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+        chmod a+r /etc/apt/keyrings/docker.asc
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+        apt-get update
+      - apt-get install -y containerd.io iputils-arping
+      - |
+        containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/' | tee /etc/containerd/config.toml
+        sed -i "s|config_path = ''|config_path = '/etc/containerd/certs.d'|" /etc/containerd/config.toml
+      - mkdir -p /etc/containerd/certs.d/registry.k8s.io && printf 'server = "https://registry.k8s.io"\n\n[host."https://mirror.gcr.io"]\n  capabilities = ["pull", "resolve"]\n' > /etc/containerd/certs.d/registry.k8s.io/hosts.toml
+      - systemctl enable containerd && systemctl restart containerd
+      - |
+        for f in /run/kubeadm/kubeadm.yaml /run/kubeadm/kubeadm-join-config.yaml; do
+          [ -f "$f" ] && FULL=$(grep 'kubernetesVersion:' "$f" | awk '{print $2}') && break
+        done
+        [ -z "$FULL" ] && FULL="v1.36.0"
+        MINOR=$(echo "$FULL" | sed 's/\(v[0-9]*\.[0-9]*\).*/\1/')
+        curl -fsSL "https://pkgs.k8s.io/core:/stable:/$MINOR/deb/Release.key" | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/$MINOR/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
+        apt-get update
+      - apt-get install -y kubelet kubeadm kubectl
+      - apt-mark hold kubelet kubeadm kubectl
+      - systemctl enable --now kubelet
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+kind: KubeadmConfigTemplate
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      preKubeadmCommands:
+        - |
+          IP=$(hostname -I | awk '{print $1}')
+          hostnamectl set-hostname "worker-$(echo "$IP" | tr '.' '-')"
+          echo "$IP $(hostname) $(hostname -s)" >> /etc/hosts
+        - printf 'overlay\nbr_netfilter\n' > /etc/modules-load.d/k8s.conf
+        - modprobe overlay; modprobe br_netfilter
+        - |
+          printf 'net.bridge.bridge-nf-call-iptables  = 1\nnet.bridge.bridge-nf-call-ip6tables = 1\nnet.ipv4.ip_forward                 = 1\nnet.ipv4.conf.all.rp_filter         = 0\nnet.ipv4.conf.eth0.rp_filter        = 0\n' > /etc/sysctl.d/k8s.conf
+        - sysctl --system
+        - swapoff -a; sed -i '/ swap /d' /etc/fstab 2>/dev/null; true
+        - |
+          systemctl stop unattended-upgrades 2>/dev/null || true
+          systemctl disable unattended-upgrades 2>/dev/null || true
+          pkill -f unattended-upgr 2>/dev/null || true
+          i=0
+          while pgrep -x apt >/dev/null 2>&1 || pgrep -x apt-get >/dev/null 2>&1 || pgrep -x dpkg >/dev/null 2>&1; do
+            i=$((i+1)); [ $i -gt 120 ] && break; sleep 2
+          done
+          true
+        - apt-get update
+        - apt-get install -y ca-certificates curl gpg
+        - |
+          install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+          chmod a+r /etc/apt/keyrings/docker.asc
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+          apt-get update
+        - apt-get install -y containerd.io iputils-arping
+        - |
+          containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/' | tee /etc/containerd/config.toml
+          sed -i "s|config_path = ''|config_path = '/etc/containerd/certs.d'|" /etc/containerd/config.toml
+        - mkdir -p /etc/containerd/certs.d/registry.k8s.io && printf 'server = "https://registry.k8s.io"\n\n[host."https://mirror.gcr.io"]\n  capabilities = ["pull", "resolve"]\n' > /etc/containerd/certs.d/registry.k8s.io/hosts.toml
+        - systemctl enable containerd && systemctl restart containerd
+        - |
+          for f in /run/kubeadm/kubeadm.yaml /run/kubeadm/kubeadm-join-config.yaml; do
+            [ -f "$f" ] && FULL=$(grep 'kubernetesVersion:' "$f" | awk '{print $2}') && break
+          done
+          [ -z "$FULL" ] && FULL="v1.36.0"
+          MINOR=$(echo "$FULL" | sed 's/\(v[0-9]*\.[0-9]*\).*/\1/')
+          curl -fsSL "https://pkgs.k8s.io/core:/stable:/$MINOR/deb/Release.key" | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+          echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/$MINOR/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
+          apt-get update
+        - apt-get install -y kubelet kubeadm
+        - apt-mark hold kubelet kubeadm
+        - systemctl enable --now kubelet
+        - arping -I eth0 -c 3 ${CP_HOST} 2>/dev/null || true
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: cgroup-driver
+              value: systemd
+            - name: cloud-provider
+              value: external
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineDeployment
+metadata:
+  name: ${CLUSTER_NAME}-md-0
+  namespace: ${NAMESPACE}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  replicas: ${WORKER_MACHINE_COUNT}
+  template:
+    spec:
+      clusterName: ${CLUSTER_NAME}
+      version: ${KUBERNETES_VERSION}
+      bootstrap:
+        configRef:
+          apiGroup: bootstrap.cluster.x-k8s.io
+          kind: KubeadmConfigTemplate
+          name: ${CLUSTER_NAME}-worker
+      infrastructureRef:
+        apiGroup: vates.infrastructure.cluster.x-k8s.io
+        kind: XOMachineTemplate
+        name: ${CLUSTER_NAME}-worker
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: ${CLUSTER_NAME}-cp
+  namespace: ${NAMESPACE}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  checks:
+    nodeStartupTimeoutSeconds: 600
+    unhealthyNodeConditions:
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/control-plane: ""
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 1
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  checks:
+    nodeStartupTimeoutSeconds: 600
+    unhealthyNodeConditions:
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/deployment-name: ${CLUSTER_NAME}-md-0
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 1

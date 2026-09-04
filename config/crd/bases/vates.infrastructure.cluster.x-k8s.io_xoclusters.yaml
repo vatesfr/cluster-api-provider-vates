@@ -53,6 +53,33 @@ spec:
             description: XOClusterSpec defines the desired state of a Xen Orchestra
               cluster.
             properties:
+              addons:
+                description: |-
+                  Addons selects which workload cluster addons the controller installs
+                  via ClusterResourceSet. When nil, defaults to CCM and CSI enabled and
+                  no CNI.
+                properties:
+                  ccm:
+                    default: true
+                    description: |-
+                      CCM installs the Xen Orchestra cloud-controller-manager (node addresses,
+                      service load balancers). Defaults to true.
+                    type: boolean
+                  cni:
+                    description: |-
+                      CNI selects the Container Network Interface installed via
+                      ClusterResourceSet. Supported values: "none", "cilium". When unset
+                      (or "none"), no CNI is installed by the controller.
+                    enum:
+                    - none
+                    - cilium
+                    type: string
+                  csi:
+                    default: true
+                    description: CSI installs the Xen Orchestra CSI driver. Defaults
+                      to true.
+                    type: boolean
+                type: object
               controlPlaneEndpoint:
                 description: ControlPlaneEndpoint is the endpoint for the control
                   plane.

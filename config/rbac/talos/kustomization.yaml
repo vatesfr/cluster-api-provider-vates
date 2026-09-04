@@ -1,0 +1,19 @@
+# Talos-specific RBAC.
+#
+# NOT included in the default config/rbac build. Apply this kustomization
+# separately when using the Talos bootstrap/control-plane flow (CABPT/CACPPT):
+#
+#   kubectl apply -k config/rbac/talos
+#
+# It grants the Talos control plane (CACPPT) and bootstrap (CABPT) service
+# accounts access to the vates XOMachineTemplate resources, mirroring what
+# kcp-binding.yaml does for the kubeadm control plane (KCP).
+#
+# namePrefix matches config/default so the binding is named consistently
+# (vates-capi-talos-bootstrap-control-plane) and references the same
+# vates-capi-manager-role ClusterRole.
+
+namePrefix: vates-capi-
+
+resources:
+- talos-binding.yaml

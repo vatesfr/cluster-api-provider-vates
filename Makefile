@@ -92,17 +92,22 @@ test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expect
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
+# golangci-lint must be built and run with the Go version targeted by the CAPI
+# maintainers (go.mod), not a newer local Go: vendored linters (staticcheck,
+# export data readers) break on stdlib produced by a newer toolchain.
+GOLANGCI_LINT_GO ?= go1.25.8
+
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
-	"$(GOLANGCI_LINT)" run
+	GOTOOLCHAIN=$(GOLANGCI_LINT_GO) "$(GOLANGCI_LINT)" run
 
 .PHONY: lint-fix
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
-	"$(GOLANGCI_LINT)" run --fix
+	GOTOOLCHAIN=$(GOLANGCI_LINT_GO) "$(GOLANGCI_LINT)" run --fix
 
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
-	"$(GOLANGCI_LINT)" config verify
+	GOTOOLCHAIN=$(GOLANGCI_LINT_GO) "$(GOLANGCI_LINT)" config verify --schema hack/golangci.v2.11.jsonschema.json
 
 ##@ Build
 
@@ -162,7 +167,8 @@ release-manifests: manifests generate kustomize ## Generate release artifacts fo
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	printf '%s\n' '---' 'apiVersion: v1' 'kind: Namespace' 'metadata:' '  name: capi-system' '---' > dist/infrastructure-components.yaml
 	"$(KUSTOMIZE)" build config/default >> dist/infrastructure-components.yaml
-	cp examples/clusterctl/cluster-template.yaml dist/
+	cp templates/kubeadm/base/clusterctl/almalinux-fromscratch.yaml dist/cluster-template.yaml
+	cp metadata.yaml dist/
 	@echo "Release artifacts in dist/:"
 	@ls -l dist/
 
@@ -247,8 +253,9 @@ $(ENVTEST): $(LOCALBIN)
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
-	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
-	@test -f .custom-gcl.yml && { \
+	export GOTOOLCHAIN=$(GOLANGCI_LINT_GO); \
+	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION)); \
+	test -f .custom-gcl.yml && { \
 		echo "Building custom golangci-lint with plugins..." && \
 		$(GOLANGCI_LINT) custom --destination $(LOCALBIN) --name golangci-lint-custom && \
 		mv -f $(LOCALBIN)/golangci-lint-custom $(GOLANGCI_LINT); \

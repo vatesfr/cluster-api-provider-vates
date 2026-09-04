@@ -1,0 +1,24 @@
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: my-cluster-worker
+  labels:
+    cluster.x-k8s.io/cluster-name: my-cluster
+spec:
+  clusterName: my-cluster
+  checks:
+    nodeStartupTimeoutSeconds: 600
+    unhealthyNodeConditions:
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+  selector:
+    matchLabels:
+      topology.cluster.x-k8s.io/owned: ""
+      cluster.x-k8s.io/deployment-name: my-cluster-worker-md-0
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 1

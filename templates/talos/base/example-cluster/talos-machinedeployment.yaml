@@ -1,0 +1,22 @@
+# MachineDeployment for Talos worker nodes
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineDeployment
+metadata:
+  name: talos-worker-md-0
+  namespace: default
+spec:
+  clusterName: talos-cluster
+  replicas: 2
+  template:
+    spec:
+      clusterName: talos-cluster
+      version: v1.36.1
+      bootstrap:
+        configRef:
+          apiGroup: bootstrap.cluster.x-k8s.io
+          kind: TalosConfigTemplate
+          name: talos-worker
+      infrastructureRef:
+        apiGroup: vates.infrastructure.cluster.x-k8s.io
+        kind: XOMachineTemplate
+        name: talos-worker

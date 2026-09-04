@@ -1,0 +1,13 @@
+# Talos CAPI cluster scaffold: Cluster, XOCluster, TalosControlPlane,
+# TalosConfigTemplate, MachineDeployment and MachineHealthChecks.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - talos-cluster.yaml
+  - talos-xocluster.yaml
+  - talos-controlplane.yaml
+  - talos-configtemplate.yaml
+  - talos-machinedeployment.yaml
+  - talos-machinehealthcheck-cp.yaml
+  - talos-machinehealthcheck-worker.yaml

@@ -21,6 +21,8 @@ resources:
 # Bind the manager-role to the KCP controller's service account
 # (capi-kubeadm-control-plane-system namespace, not transformed by kustomize)
 - kcp-binding.yaml
+# Talos bindings (CACPPT/CABPT) are NOT included here by default.
+# Apply config/rbac/talos separately when using the Talos bootstrap flow.
 # Aggregate role: allows the CAPI manager (capi-system) to watch our types
 # via the cluster.x-k8s.io/aggregate-to-manager label
 - capi_aggregate_role.yaml

@@ -1,0 +1,22 @@
+# kubeadm CAPI cluster on Xen Orchestra — base templates.
+# Uses placeholders — replace with your XO environment values, or use an
+# overlay (see overlays/) for a specific environment.
+#
+# Prerequisites on the management cluster (kind):
+#   clusterctl init --bootstrap kubeadm --control-plane kubeadm --infrastructure vates
+#
+# Then apply:
+#   kubectl apply -k templates/kubeadm/base/clusterclass/   # ClusterClass (once)
+#   kubectl apply -k templates/kubeadm/base/machinetemplates/  # after editing IDs
+#   kubectl apply -k templates/kubeadm/base/example-cluster/   # the Cluster itself
+#
+# Or use clusterctl:
+#   clusterctl generate cluster my-cluster \
+#     --from templates/kubeadm/base/clusterctl/almalinux-fromscratch.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - clusterclass
+  - machinetemplates
+  - example-cluster

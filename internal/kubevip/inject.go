@@ -11,8 +11,7 @@ const (
 	preScriptPath  = "/etc/kubernetes/kube-vip-pre.sh"
 	postScriptPath = "/etc/kubernetes/kube-vip-post.sh"
 
-	kubeVIPImage     = "ghcr.io/kube-vip/kube-vip:v1.1.2"
-	kubeVIPInterface = "eth0"
+	kubeVIPImage = "ghcr.io/kube-vip/kube-vip:v1.1.2"
 )
 
 type Config struct {
@@ -42,12 +41,14 @@ else
   cp /etc/kubernetes/admin.conf /etc/kubernetes/kube-vip.conf
 fi
 sed -i 's|https://[^:]*:6443|https://127.0.0.1:6443|g' /etc/kubernetes/kube-vip.conf
+VIP_INTERFACE=$(ip route show default | awk '{print $5}' | head -1)
+[ -z "$VIP_INTERFACE" ] && VIP_INTERFACE=eth0
 ctr run --rm --net-host %s gen /kube-vip manifest pod \
-  --interface %s --address %s --controlplane --services --arp --leaderElection%s \
+  --interface "$VIP_INTERFACE" --address %s --controlplane --services --arp --leaderElection%s \
   > /etc/kubernetes/manifests/kube-vip.yaml
 sed -i 's|admin\.conf|kube-vip.conf|g' /etc/kubernetes/manifests/kube-vip.yaml
 sed -i 's|mountPath: /etc/kubernetes/kube-vip.conf|mountPath: /.kube/config|g' /etc/kubernetes/manifests/kube-vip.yaml
-`, kubeVIPImage, kubeVIPInterface, cfg.VIP, vipSubnetFlag)
+`, kubeVIPImage, cfg.VIP, vipSubnetFlag)
 }
 
 func Inject(cloudConfig string, cfg Config) (string, error) {

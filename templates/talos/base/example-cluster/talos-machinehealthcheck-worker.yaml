@@ -1,0 +1,27 @@
+# MachineHealthCheck for Talos worker nodes.
+# Detects nodes stuck in NotReady, deletes the unhealthy Machine and lets the
+# MachineSet create a replacement (which gets a fresh XOMachine -> new VM).
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: talos-cluster-worker
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: talos-cluster
+spec:
+  clusterName: talos-cluster
+  checks:
+    nodeStartupTimeoutSeconds: 600
+    unhealthyNodeConditions:
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/deployment-name: talos-worker-md-0
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 1

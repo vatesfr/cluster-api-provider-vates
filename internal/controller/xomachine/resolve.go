@@ -5,58 +5,11 @@ import (
 	"fmt"
 
 	"github.com/gofrs/uuid"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
 	xoclient "github.com/vatesfr/xenorchestra-go-sdk/client"
 	xok8scommon "github.com/vatesfr/xenorchestra-k8s-common"
 
 	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
-
-// ResolveBootstrapDataResult holds the result of resolving bootstrap data.
-type ResolveBootstrapDataResult struct {
-	Machine *clusterv1.Machine
-	Data    []byte
-	Requeue bool
-}
-
-// ResolveBootstrapData gets the owner Machine and the associated bootstrap data.
-// Returns:
-//   - (result with machine and data) when data is available
-//   - (result with Requeue=true) when bootstrap is not yet ready
-//   - error on failure
-func ResolveBootstrapData(ctx context.Context, c client.Client, vatesMachine *infrastructurev1beta2.XOMachine) (ResolveBootstrapDataResult, error) {
-	logger := log.FromContext(ctx)
-
-	machine, err := GetOwnerMachine(ctx, c, vatesMachine)
-	if err != nil {
-		logger.Error(err, "Failed to get owner Machine")
-		return ResolveBootstrapDataResult{}, err
-	}
-
-	if machine != nil {
-		if machine.Spec.Bootstrap.DataSecretName == nil {
-			logger.Info("Waiting for bootstrap data secret to be generated")
-			return ResolveBootstrapDataResult{Machine: machine, Requeue: true}, nil
-		}
-		data, err := GetBootstrapData(ctx, c, machine)
-		if err != nil {
-			logger.Error(err, "Failed to get bootstrap data")
-			return ResolveBootstrapDataResult{}, err
-		}
-		return ResolveBootstrapDataResult{Machine: machine, Data: data}, nil
-	}
-
-	if vatesMachine.Spec.BootstrapData != "" {
-		logger.Info("Using inline bootstrap data from spec")
-		return ResolveBootstrapDataResult{Data: []byte(vatesMachine.Spec.BootstrapData)}, nil
-	}
-
-	logger.Info("No owner Machine yet and no inline bootstrap data, requeuing")
-	return ResolveBootstrapDataResult{Requeue: true}, nil
-}
 
 // ResolveTemplateID resolves a template UUID from either a direct UUID string
 // or a name label lookup via the V1 client.
