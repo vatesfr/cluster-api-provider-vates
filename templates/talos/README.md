@@ -65,7 +65,7 @@ Generate the provider manifest:
 
 ```bash
 make release-manifests
-make dev-overrides   # refresh dist/ and copy the release assets into the local overrides
+make -f Makefile.dev dev-overrides   # refresh dist/ and copy the release assets into the local overrides
 ```
 
 Create `~/.config/cluster-api/clusterctl.yaml` (or append to it):

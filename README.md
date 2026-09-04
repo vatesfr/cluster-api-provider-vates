@@ -71,7 +71,7 @@ See [templates/kubeadm/README.md](templates/kubeadm/README.md) for the complete 
 `~/.config/clusterctl/`):
 
 For **local development**, point at the local overrides refreshed by
-`make dev-overrides` (regenerates `dist/` and copies the three release assets
+`make -f Makefile.dev dev-overrides` (regenerates `dist/` and copies the three release assets
 into `~/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/`):
 
 ```yaml

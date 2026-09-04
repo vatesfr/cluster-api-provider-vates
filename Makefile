@@ -167,18 +167,6 @@ release-manifests: manifests generate kustomize ## Generate release artifacts fo
 	@echo "Release artifacts in dist/:"
 	@ls -l dist/
 
-.PHONY: dev-overrides
-dev-overrides: release-manifests ## Refresh the local clusterctl overrides and config from dist/ for development.
-	@mkdir -p "$(HOME)/.config/cluster-api/overrides/infrastructure-vates/v0.1.0"
-	@cp dist/infrastructure-components.yaml dist/metadata.yaml dist/cluster-template.yaml "$(HOME)/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/"
-	@if [ ! -f "$(HOME)/.config/cluster-api/clusterctl.yaml" ]; then \
-		echo "Creating $(HOME)/.config/cluster-api/clusterctl.yaml"; \
-		{ echo 'providers:'; echo '  - name: vates'; echo '    type: InfrastructureProvider'; echo "    url: file://\$${HOME}/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/infrastructure-components.yaml"; } > "$(HOME)/.config/cluster-api/clusterctl.yaml"; \
-	elif ! grep -q 'name: vates' "$(HOME)/.config/cluster-api/clusterctl.yaml"; then \
-		echo "WARNING: vates provider not registered in $(HOME)/.config/cluster-api/clusterctl.yaml — add it manually (see README)"; \
-	fi
-	@echo "clusterctl overrides refreshed from dist/"
-
 ##@ Deployment
 
 ifndef ignore-not-found
