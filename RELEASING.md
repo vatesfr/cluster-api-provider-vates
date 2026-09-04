@@ -65,7 +65,7 @@ While developing, `clusterctl` reads from the local overrides layer instead of
 a published release:
 
 ```bash
-make dev-overrides     # refresh overrides from dist/
+make -f Makefile.dev dev-overrides     # refresh overrides from dist/
 ```
 
 This regenerates `dist/` and copies the three assets into

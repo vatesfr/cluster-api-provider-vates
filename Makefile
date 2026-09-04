@@ -167,12 +167,6 @@ release-manifests: manifests generate kustomize ## Generate release artifacts fo
 	@echo "Release artifacts in dist/:"
 	@ls -l dist/
 
-.PHONY: dev-overrides
-dev-overrides: release-manifests ## Refresh the local clusterctl overrides from dist/ for development.
-	@mkdir -p "$(HOME)/.config/cluster-api/overrides/infrastructure-vates/v0.1.0"
-	@cp dist/infrastructure-components.yaml dist/metadata.yaml dist/cluster-template.yaml "$(HOME)/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/"
-	@echo "clusterctl overrides refreshed from dist/"
-
 ##@ Deployment
 
 ifndef ignore-not-found
