@@ -2,17 +2,16 @@
 #   CP_VIP          - Talos shared control plane VIP (e.g. 10.30.139.10)
 #   CP_SUBNET       - CIDR subnet mask for the VIP (e.g. 16, 24)
 #   VM_NAME_PREFIX  - Prefix for VM names (e.g. my-cluster)
-#   KUBERNETES_VERSION - Kubernetes version (e.g. v1.36.1)
-#   TALOS_VERSION   - Talos version (e.g. v1.13.9)
 #   XO_TEMPLATE_UUID - UUID of the Talos nocloud template (viridian=false)
 #   XO_POOL_UUID    - UUID of your Xen Orchestra pool
 #   XO_NETWORK_UUID - UUID of your Xen Orchestra network
 #
-# Optional variables (clusterctl built-in defaults — not the base/ replicas):
-#   CLUSTER_NAME                - Cluster name (default: name argument)
-#   NAMESPACE                   - Target namespace (default: current namespace)
-#   CONTROL_PLANE_MACHINE_COUNT - Control plane replicas (default: 1)
-#   WORKER_MACHINE_COUNT        - Worker replicas (default: 0)
+# Clusterctl built-in variables (set via flags or env):
+#   KUBERNETES_VERSION         - Kubernetes version (via --kubernetes-version or env)
+#   CLUSTER_NAME               - Cluster name (default: name argument)
+#   NAMESPACE                  - Target namespace (default: current namespace)
+#   CONTROL_PLANE_MACHINE_COUNT - Control plane replicas (--control-plane-machine-count)
+#   WORKER_MACHINE_COUNT        - Worker replicas (--worker-machine-count)
 #
 # To match base/ (3 control plane, 2 workers), pass the flags:
 #   --control-plane-machine-count 3 --worker-machine-count 2

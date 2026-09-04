@@ -206,13 +206,13 @@ export CP_PORT=6443
 export CP_LB=kube-vip                 # or "" (empty = no LB)
 export CP_SUBNET=<your-subnet-cidr-bits>
 export VM_NAME_PREFIX=<your-vm-name-prefix>
-export KUBERNETES_VERSION=v1.36.1
 export XO_TEMPLATE_UUID=<your-xo-template-uuid>
 export XO_POOL_UUID=<your-xo-pool-uuid>
 export XO_NETWORK_UUID=<your-xo-network-uuid>
 
 clusterctl generate cluster my-cluster \
   --from templates/kubeadm/base/clusterctl/almalinux-prefilled.yaml \
+  --kubernetes-version v1.36.1 \
   | kubectl apply -f -
 ```
 

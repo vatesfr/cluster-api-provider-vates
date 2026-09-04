@@ -145,13 +145,13 @@ export CP_PORT=6443
 export CP_LB=kube-vip
 export CP_SUBNET=16
 export VM_NAME_PREFIX=my-cluster
-export KUBERNETES_VERSION=v1.36.0
 export XO_TEMPLATE_UUID=<your-xo-template-uuid>
 export XO_POOL_UUID=<your-xo-pool-uuid>
 export XO_NETWORK_UUID=<your-xo-network-uuid>
 
 clusterctl generate cluster my-cluster \
   --from templates/kubeadm/base/clusterctl/almalinux-fromscratch.yaml \
+  --kubernetes-version v1.36.1 \
   | kubectl apply -f -
 ```
 
@@ -163,14 +163,13 @@ Use `almalinux-prefilled.yaml` instead for the pre-baked template variant.
 export CP_VIP=10.30.139.10
 export CP_SUBNET=16
 export VM_NAME_PREFIX=my-cluster
-export KUBERNETES_VERSION=v1.36.1
-export TALOS_VERSION=v1.13.9
 export XO_TEMPLATE_UUID=<your-xo-talos-template-uuid>
 export XO_POOL_UUID=<your-xo-pool-uuid>
 export XO_NETWORK_UUID=<your-xo-network-uuid>
 
 clusterctl generate cluster my-cluster \
   --from templates/talos/base/clusterctl/cluster-template.yaml \
+  --kubernetes-version v1.36.1 \
   | kubectl apply -f -
 ```
 

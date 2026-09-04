@@ -4,18 +4,18 @@
 #   CP_LB               - Load balancer type: "kube-vip" or "" (empty = no LB)
 #   CP_SUBNET           - CIDR subnet mask for the VIP (e.g. 16, 24)
 #   VM_NAME_PREFIX      - Prefix for VM names (e.g. my-cluster)
-#   KUBERNETES_VERSION  - Kubernetes version (e.g. v1.36.1)
 #   XO_TEMPLATE_UUID    - UUID of the AlmaLinux/RHEL VM template (almalinux-prefilled)
 #   XO_POOL_UUID        - UUID of your Xen Orchestra pool
 #   XO_NETWORK_UUID     - UUID of your Xen Orchestra network
 #   XO_CNI              - CNI installed by the provider via ClusterResourceSet
 #                         (default: cilium; set to "none" to install manually)
 #
-# Optional variables (clusterctl built-in defaults — not the base/ replicas):
+# Clusterctl built-in variables (set via flags or env):
+#   KUBERNETES_VERSION          - Kubernetes version (via --kubernetes-version or env)
 #   CLUSTER_NAME                - Cluster name (default: name argument)
 #   NAMESPACE                   - Target namespace (default: current namespace)
-#   CONTROL_PLANE_MACHINE_COUNT - Control plane replicas (default: 1)
-#   WORKER_MACHINE_COUNT        - Worker replicas (default: 0)
+#   CONTROL_PLANE_MACHINE_COUNT - Control plane replicas (--control-plane-machine-count)
+#   WORKER_MACHINE_COUNT        - Worker replicas (--worker-machine-count)
 ---
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: Cluster

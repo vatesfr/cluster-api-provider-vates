@@ -280,14 +280,13 @@ overlay:
 export CP_VIP=<your-cp-vip>
 export CP_SUBNET=<your-subnet-cidr-bits>
 export VM_NAME_PREFIX=<your-vm-name-prefix>
-export KUBERNETES_VERSION=v1.36.1
-export TALOS_VERSION=v1.13.9
 export XO_TEMPLATE_UUID=<your-xo-talos-template-uuid>
 export XO_POOL_UUID=<your-xo-pool-uuid>
 export XO_NETWORK_UUID=<your-xo-network-uuid>
 
 clusterctl generate cluster my-cluster \
   --from templates/talos/base/clusterctl/cluster-template.yaml \
+  --kubernetes-version v1.36.1 \
   | kubectl apply -f -
 ```
 
@@ -298,6 +297,7 @@ the base templates (3 control plane, 2 workers), pass them explicitly:
 ```bash
 clusterctl generate cluster my-cluster \
   --from templates/talos/base/clusterctl/cluster-template.yaml \
+  --kubernetes-version v1.36.1 \
   --control-plane-machine-count 3 --worker-machine-count 2 \
   | kubectl apply -f -
 ```
