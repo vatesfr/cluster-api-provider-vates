@@ -393,10 +393,16 @@ type csiManifestData struct {
 }
 
 // cniCiliumManifest is the rendered Cilium CNI manifest applied via
-// ClusterResourceSet when spec.addons.cni == "cilium".
+// ClusterResourceSet when spec.addons.cni == cniCilium.
 //
 //go:embed cni-cilium.yaml
 var cniCiliumManifest string
+
+// CNI names used in spec.addons.cni.
+const (
+	cniCilium = "cilium"
+	cniNone   = "none"
+)
 
 // defaultAddons returns the effective addon selection, filling defaults for
 // unset fields (CCM/CSI enabled, no CNI).
@@ -413,7 +419,7 @@ func defaultAddons(a *infrastructurev1beta2.AddonsSpec) *infrastructurev1beta2.A
 		a.CSI = &enabled
 	}
 	if a.CNI == nil {
-		none := "none"
+		none := cniNone
 		a.CNI = &none
 	}
 	return a
@@ -543,7 +549,7 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *in
 	// -----------------------------------------------------------------------
 	cniCMName := "cni-manifests-" + clusterName
 	switch *addons.CNI {
-	case "cilium":
+	case cniCilium:
 		if err := r.ensureAddon(ctx, clusterName, "cni", "cni-deployment-"+clusterName, cniCMName, "ApplyOnce", cniCiliumManifest); err != nil {
 			return err
 		}
