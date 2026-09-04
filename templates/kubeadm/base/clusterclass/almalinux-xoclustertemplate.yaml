@@ -1,7 +1,8 @@
 apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
 kind: XOClusterTemplate
 metadata:
-  name: rhel-cluster
+  name: almalinux-cluster
 spec:
   template:
-    spec: {}
+    spec:
+      injectSSHKeys: true

@@ -4,7 +4,7 @@
 
 **Suppression :**
 - Packer (`examples/packers/`) — plus besoin de pré-construire des images VM avec K8s
-- Prefilled ClusterClass + VatesMachineTemplates — redondant avec from-scratch
+- Prefilled ClusterClass + VatesMachineTemplates — redondant avec almalinux-fromscratch
 - kernel-modules / kernel-modules-extra — inutiles (89 Mo), overlay et br_netfilter sont built-in
 
 **Modifié :**
@@ -22,7 +22,7 @@
 
 ## Pourquoi ça marche (identique au main)
 
-Le flot est le même que le from-scratch du main :
+Le flot est le même que le almalinux-fromscratch du main :
 1. VM boot → cloud-init
 2. kernel modules, sysctls, swap
 3. containerd installé via EPEL

@@ -1,7 +1,7 @@
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: ClusterClass
 metadata:
-  name: vates-rhel-from-scratch
+  name: vates-almalinux-fromscratch
 spec:
   variables:
     - name: controlPlaneEndpoint
@@ -66,7 +66,7 @@ spec:
             matchResources:
               machineDeploymentClass:
                 names:
-                  - worker-from-scratch
+                  - worker-almalinux-fromscratch
           jsonPatches:
             - op: replace
               path: /spec/template/spec/namePrefix
@@ -80,7 +80,7 @@ spec:
             matchResources:
               machineDeploymentClass:
                 names:
-                  - worker-from-scratch
+                  - worker-almalinux-fromscratch
           jsonPatches:
             - op: add
               path: /spec/template/spec/preKubeadmCommands/-
@@ -120,7 +120,7 @@ spec:
               path: /spec/template/spec/kubeadmConfigSpec/postKubeadmCommands/-
               valueFrom:
                 template: >
-                  cp /etc/kubernetes/super-admin.conf /tmp/kubeconfig-local.conf
+                  cp /etc/kubernetes/super-admin.conf /tmp/kubeconfig-local.conf 2>/dev/null || cp /etc/kubernetes/admin.conf /tmp/kubeconfig-local.conf
                   && sed -i 's|https://[0-9.]*:6443|https://127.0.0.1:6443|' /tmp/kubeconfig-local.conf
                   && export KUBECONFIG=/tmp/kubeconfig-local.conf
                   && (command -v cilium >/dev/null 2>&1
@@ -135,25 +135,25 @@ spec:
                   --set kubeProxyReplacement=false
                   --set clustermesh.useAPIServer=false
                   --set hubble.enabled=false
-                  && cilium status --wait --wait-duration=120s
+                  && cilium status --wait --wait-duration=90s
   infrastructure:
     templateRef:
       apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
       kind: XOClusterTemplate
-      name: rhel-cluster
+      name: almalinux-cluster
   controlPlane:
     templateRef:
       apiVersion: controlplane.cluster.x-k8s.io/v1beta2
       kind: KubeadmControlPlaneTemplate
-      name: rhel-from-scratch-control-plane
+      name: almalinux-fromscratch-control-plane
     machineInfrastructure:
       templateRef:
         apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
         kind: XOMachineTemplate
-        name: rhel-cp-from-scratch
+        name: almalinux-cp-fromscratch
   workers:
     machineDeployments:
-      - class: worker-from-scratch
+      - class: worker-almalinux-fromscratch
         healthCheck:
           checks:
             nodeStartupTimeoutSeconds: 600
@@ -170,9 +170,9 @@ spec:
           templateRef:
             apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
             kind: KubeadmConfigTemplate
-            name: rhel-from-scratch-worker
+            name: almalinux-fromscratch-worker
         infrastructure:
           templateRef:
             apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
             kind: XOMachineTemplate
-            name: rhel-worker-from-scratch
+            name: almalinux-worker-fromscratch

@@ -7,8 +7,8 @@ Two ClusterClass variants for **AlmaLinux 10 / RHEL-like** nodes :
 
 | ClusterClass | Worker flavor | Bootstrap |
 |---|---|---|
-| `vates-rhel-from-scratch` | `worker-from-scratch` | Full (dnf install kubelet/kubeadm) |
-| `vates-rhel-prefilled` | `worker-prefilled` | Minimal (assumes pre-baked image) |
+| `vates-almalinux-fromscratch` | `worker-almalinux-fromscratch` | Full (dnf install kubelet/kubeadm) |
+| `vates-almalinux-prefilled` | `worker-almalinux-prefilled` | Minimal (assumes pre-baked image) |
 
 ## Apply once (cluster-scoped)
 

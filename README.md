@@ -26,9 +26,9 @@ kubectl create secret generic xo-credentials -n capi-system \
 All VM templates must have **cloud-init** support enabled and **Xen guest tools**
 installed and running. Two ClusterClass variants are provided:
 
-- **`prefilled`** — for templates that already have kubelet, kubeadm, containerd,
+- **`almalinux-prefilled`** — for templates that already have kubelet, kubeadm, containerd,
   kube-vip, and Cilium images pre-installed.
-- **`from-scratch`** — for minimal templates (just containerd + Xen guest tools).
+- **`almalinux-fromscratch`** — for minimal templates (just containerd + Xen guest tools).
   The ClusterClass handles installing everything via `preKubeadmCommands`.
 
 Note: TemplateID is without PoolID in it and must be bootable.
@@ -151,7 +151,7 @@ make -f Makefile.dev restart  # Restart the controller pod
 ├── dist/                          # Generated release artifacts
 │   ├── install.yaml               # kubectl apply bundle
 │   ├── infrastructure-components.yaml  # clusterctl bundle
-│   ├── cluster-template.yaml      # clusterctl template
+│   ├── cluster-template.yaml      # clusterctl template (kubeadm almalinux-fromscratch)
 │   └── chart/                     # Helm chart
 
 ```

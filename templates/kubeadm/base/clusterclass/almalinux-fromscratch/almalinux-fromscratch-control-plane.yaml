@@ -1,7 +1,7 @@
 apiVersion: controlplane.cluster.x-k8s.io/v1beta2
 kind: KubeadmControlPlaneTemplate
 metadata:
-  name: rhel-from-scratch-control-plane
+  name: almalinux-fromscratch-control-plane
 spec:
   template:
     spec:
@@ -28,7 +28,8 @@ spec:
         preKubeadmCommands:
           - |
             IP=$(hostname -I | awk '{print $1}')
-            hostnamectl set-hostname "cp-${IP//./-}"
+            hostnamectl set-hostname "cp-$(echo "$IP" | tr '.' '-')"
+            echo "$IP $(hostname) $(hostname -s)" >> /etc/hosts
           - printf 'overlay\nbr_netfilter\n' > /etc/modules-load.d/k8s.conf
           - modprobe overlay; modprobe br_netfilter
           - |
@@ -36,10 +37,6 @@ spec:
           - sysctl --system
           - swapoff -a; sed -i '/ swap /d' /etc/fstab 2>/dev/null; true
           - dnf install -y epel-release
-          - dnf install -y containerd runc
-          - containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/' | tee /etc/containerd/config.toml
-          - mkdir -p /etc/containerd/certs.d/registry.k8s.io && printf 'server = "https://registry.k8s.io"\n\n[host."https://mirror.gcr.io"]\n  capabilities = ["pull", "resolve"]\n' > /etc/containerd/certs.d/registry.k8s.io/hosts.toml
-          - systemctl enable --now containerd
           - |
             for f in /run/kubeadm/kubeadm.yaml /run/kubeadm/kubeadm-join-config.yaml; do
               [ -f "$f" ] && FULL=$(grep 'kubernetesVersion:' "$f" | awk '{print $2}') && break
@@ -49,13 +46,19 @@ spec:
             cat <<EOF > /etc/yum.repos.d/kubernetes.repo
             [kubernetes]
             name=Kubernetes
-            baseurl=https://pkgs.k8s.io/core:/stable:/${MINOR}/rpm/
+            baseurl=https://pkgs.k8s.io/core:/stable:/$MINOR/rpm/
             enabled=1
             gpgcheck=1
-            gpgkey=https://pkgs.k8s.io/core:/stable:/${MINOR}/rpm/repodata/repomd.xml.key
+            gpgkey=https://pkgs.k8s.io/core:/stable:/$MINOR/rpm/repodata/repomd.xml.key
             EOF
-          - dnf install -y kubelet kubeadm kubectl --disableexcludes=kubernetes
+          - dnf install -y --disableexcludes=kubernetes --setopt=install_weak_deps=False containerd runc kubelet kubeadm kubectl
+          - |
+            containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/' | tee /etc/containerd/config.toml
+            sed -i "s|config_path = ''|config_path = '/etc/containerd/certs.d'|" /etc/containerd/config.toml
+          - mkdir -p /etc/containerd/certs.d/registry.k8s.io && printf 'server = "https://registry.k8s.io"\n\n[host."https://mirror.gcr.io"]\n  capabilities = ["pull", "resolve"]\n' > /etc/containerd/certs.d/registry.k8s.io/hosts.toml
+          - systemctl enable --now containerd
           - systemctl enable --now kubelet
+          - test -f /run/kubeadm/kubeadm.yaml && nohup kubeadm config images pull --config /run/kubeadm/kubeadm.yaml >/tmp/kubeadm-pull.log 2>&1 &
         postKubeadmCommands:
           - "true"
       machineTemplate:

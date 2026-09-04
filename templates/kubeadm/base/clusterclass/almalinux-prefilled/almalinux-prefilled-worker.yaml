@@ -1,14 +1,15 @@
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
 kind: KubeadmConfigTemplate
 metadata:
-  name: rhel-prefilled-worker
+  name: almalinux-prefilled-worker
 spec:
   template:
     spec:
       preKubeadmCommands:
         - |
           IP=$(hostname -I | awk '{print $1}')
-          hostnamectl set-hostname "worker-${IP//./-}"
+          hostnamectl set-hostname "worker-$(echo "$IP" | tr '.' '-')"
+          echo "$IP $(hostname) $(hostname -s)" >> /etc/hosts
       joinConfiguration:
         nodeRegistration:
           kubeletExtraArgs:

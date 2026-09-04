@@ -12,8 +12,8 @@ that meets the following requirements:
   configuration (NoCloud datasource, used by the provider)
 - **XE guest tools installed** — required for the provider to retrieve the VM IP
   after creation
-- **Containerd pre-installed** (`prefilled` variant) or installed at boot
-  (`from-scratch` variant)
+- **Containerd pre-installed** (`almalinux-prefilled` variant) or installed at boot
+  (`almalinux-fromscratch` variant)
 - **SSH enabled** — for debugging via `kubectl debug node` or direct access
 - **Access to a container registry mirror** (optional but recommended) — the
   bootstrap downloads kubelet/kubeadm from `https://pkgs.k8s.io`
@@ -38,12 +38,12 @@ templates/
 │   ├── base/                            # community templates — placeholders
 │   │   ├── clusterclass/                # ClusterClass + non-machine templates
 │   │   │   ├── kustomization.yaml
-│   │   │   ├── rhel-xoclustertemplate.yaml  # shared XOClusterTemplate
-│   │   │   ├── from-scratch/            # full bootstrap (dnf install kubelet...)
-│   │   │   └── prefilled/               # pre-baked image (minimal bootstrap)
+│   │   │   ├── almalinux-xoclustertemplate.yaml  # shared XOClusterTemplate
+│   │   │   ├── almalinux-fromscratch/            # full bootstrap (dnf install kubelet...)
+│   │   │   └── almalinux-prefilled/               # pre-baked image (minimal bootstrap)
 │   │   ├── machinetemplates/            # XOMachineTemplate (placeholders)
-│   │   │   ├── from-scratch/
-│   │   │   └── prefilled/
+│   │   │   ├── almalinux-fromscratch/
+│   │   │   └── almalinux-prefilled/
 │   │   ├── example-cluster/             # Cluster scaffold + CP MachineHealthCheck
 │   │   ├── clusterctl/                  # clusterctl-compatible template (kubeadm)
 │   │   └── kustomization.yaml
@@ -107,7 +107,7 @@ The templates ship MHC objects for both roles and both bootstrap flows:
 
 | Bootstrap flow | Control plane | Workers |
 |---|---|---|
-| kubeadm (ClusterClass, `clusterctl/`) | `${CLUSTER_NAME}-cp` | `${CLUSTER_NAME}-worker` |
+| kubeadm (flat, `clusterctl/`) | `${CLUSTER_NAME}-cp` | `${CLUSTER_NAME}-worker` |
 | kubeadm (example-cluster) | `my-cluster-cp` | `my-cluster-worker` |
 | talos (flat) | `talos-cluster-cp` | `talos-cluster-worker` |
 
@@ -132,11 +132,12 @@ kubectl apply -k templates/kubeadm/overlays/my-env/
 ### Option B — clusterctl generate cluster (distribution)
 
 For distribution or one-off clusters, `clusterctl generate cluster` substitutes
-the `${...}` variables in a `cluster-template.yaml` and prints the manifests to
-pipe into `kubectl apply`. Each bootstrap flow ships its own template under
-`<flow>/base/clusterctl/`.
+the `${...}` variables in a template file and prints the manifests to
+pipe into `kubectl apply`. Each bootstrap flow ships its own self-contained
+(flat) template under `<flow>/base/clusterctl/`.
 
-**kubeadm** (ClusterClass, cloud-init):
+**kubeadm** (flat, cloud-init) — two variants: `almalinux-fromscratch.yaml` (installs
+kubelet/kubeadm at bootstrap) and `almalinux-prefilled.yaml` (pre-baked template):
 
 ```bash
 export CP_HOST=10.30.139.10
@@ -145,11 +146,16 @@ export CP_LB=kube-vip
 export CP_SUBNET=16
 export VM_NAME_PREFIX=my-cluster
 export KUBERNETES_VERSION=v1.36.0
+export XO_TEMPLATE_UUID=<your-xo-template-uuid>
+export XO_POOL_UUID=<your-xo-pool-uuid>
+export XO_NETWORK_UUID=<your-xo-network-uuid>
 
 clusterctl generate cluster my-cluster \
-  --from templates/kubeadm/base/clusterctl/cluster-template.yaml \
+  --from templates/kubeadm/base/clusterctl/almalinux-fromscratch.yaml \
   | kubectl apply -f -
 ```
+
+Use `almalinux-prefilled.yaml` instead for the pre-baked template variant.
 
 **Talos** (flat, immutable OS):
 
@@ -168,9 +174,9 @@ clusterctl generate cluster my-cluster \
   | kubectl apply -f -
 ```
 
-Both templates embed the control plane and worker `MachineHealthChecks`, so
+Both template styles embed the control plane and worker `MachineHealthChecks`, so
 killed/unhealthy machines are remediated automatically. See the variables
-documented at the top of each `cluster-template.yaml`, and the per-flow
+documented at the top of each template, and the per-flow
 READMEs (`templates/kubeadm/README.md`, `templates/talos/README.md`).
 
 > `CONTROL_PLANE_MACHINE_COUNT` / `WORKER_MACHINE_COUNT` default to `1` / `0`
@@ -189,7 +195,7 @@ following fields:
 | `spec.template.spec.networkConfig.networks[].name` | XO network name (alternative — resolved via V1 client if UUID is unknown) |
 | `spec.template.spec.templateID` | UUID of the VM template |
 | `spec.template.spec.poolID` | UUID of your Xen Orchestra pool |
-| `spec.topology.classRef.name` | ClusterClass variant to use (`vates-rhel-prefilled` or `vates-rhel-from-scratch`) |
+| `spec.topology.classRef.name` | ClusterClass variant to use (`vates-almalinux-prefilled` or `vates-almalinux-fromscratch`) |
 | `spec.topology.variables` | Control plane endpoint, VM name prefix, load balancer, replicas |
 | `HARBOR_HOST` (env var) | Hostname of your Harbor registry (e.g. `10.30.139.100`). Set before running `make` in `packer/` to enable containerd registry mirrors. Leave unset to pull directly from upstream. |
 | `HARBOR_CA_PATH` (env var) | Path to the Harbor CA certificate file (PEM). Required if Harbor uses a self-signed cert. Copy your Harbor CA PEM to a known path and set this variable before running `packer build`. Example: `export HARBOR_CA_PATH=/etc/pki/harbor-ca.crt`. If unset, the script skips CA installation (mirrors still work if Harbor uses a publicly-trusted CA). |

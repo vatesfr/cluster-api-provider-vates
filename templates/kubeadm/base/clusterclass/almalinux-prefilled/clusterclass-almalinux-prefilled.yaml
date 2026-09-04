@@ -1,7 +1,7 @@
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: ClusterClass
 metadata:
-  name: vates-rhel-prefilled
+  name: vates-almalinux-prefilled
 spec:
   variables:
     - name: controlPlaneEndpoint
@@ -66,7 +66,7 @@ spec:
             matchResources:
               machineDeploymentClass:
                 names:
-                  - worker-prefilled
+                  - worker-almalinux-prefilled
           jsonPatches:
             - op: replace
               path: /spec/template/spec/namePrefix
@@ -80,7 +80,7 @@ spec:
             matchResources:
               machineDeploymentClass:
                 names:
-                  - worker-prefilled
+                  - worker-almalinux-prefilled
           jsonPatches:
             - op: add
               path: /spec/template/spec/preKubeadmCommands/-
@@ -120,7 +120,7 @@ spec:
               path: /spec/template/spec/kubeadmConfigSpec/postKubeadmCommands/-
               valueFrom:
                 template: >
-                  cp /etc/kubernetes/super-admin.conf /tmp/kubeconfig-local.conf
+                  cp /etc/kubernetes/super-admin.conf /tmp/kubeconfig-local.conf 2>/dev/null || cp /etc/kubernetes/admin.conf /tmp/kubeconfig-local.conf
                   && sed -i 's|https://[0-9.]*:6443|https://127.0.0.1:6443|' /tmp/kubeconfig-local.conf
                   && export KUBECONFIG=/tmp/kubeconfig-local.conf
                   && cilium install --version 1.16.6
@@ -129,25 +129,25 @@ spec:
                   --set kubeProxyReplacement=false
                   --set clustermesh.useAPIServer=false
                   --set hubble.enabled=false
-                  && cilium status --wait --wait-duration=120s
+                  && cilium status --wait --wait-duration=90s
   infrastructure:
     templateRef:
       apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
       kind: XOClusterTemplate
-      name: rhel-cluster
+      name: almalinux-cluster
   controlPlane:
     templateRef:
       apiVersion: controlplane.cluster.x-k8s.io/v1beta2
       kind: KubeadmControlPlaneTemplate
-      name: rhel-prefilled-control-plane
+      name: almalinux-prefilled-control-plane
     machineInfrastructure:
       templateRef:
         apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
         kind: XOMachineTemplate
-        name: rhel-cp-prefilled
+        name: almalinux-cp-prefilled
   workers:
     machineDeployments:
-      - class: worker-prefilled
+      - class: worker-almalinux-prefilled
         healthCheck:
           checks:
             nodeStartupTimeoutSeconds: 600
@@ -164,9 +164,9 @@ spec:
           templateRef:
             apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
             kind: KubeadmConfigTemplate
-            name: rhel-prefilled-worker
+            name: almalinux-prefilled-worker
         infrastructure:
           templateRef:
             apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
             kind: XOMachineTemplate
-            name: rhel-worker-prefilled
+            name: almalinux-worker-prefilled

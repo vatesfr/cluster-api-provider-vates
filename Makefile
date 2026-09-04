@@ -162,7 +162,7 @@ release-manifests: manifests generate kustomize ## Generate release artifacts fo
 	cd config/manager && "$(KUSTOMIZE)" edit set image controller=${IMG}
 	printf '%s\n' '---' 'apiVersion: v1' 'kind: Namespace' 'metadata:' '  name: capi-system' '---' > dist/infrastructure-components.yaml
 	"$(KUSTOMIZE)" build config/default >> dist/infrastructure-components.yaml
-	cp templates/kubeadm/base/clusterctl/cluster-template.yaml dist/
+	cp templates/kubeadm/base/clusterctl/almalinux-fromscratch.yaml dist/cluster-template.yaml
 	@echo "Release artifacts in dist/:"
 	@ls -l dist/
 

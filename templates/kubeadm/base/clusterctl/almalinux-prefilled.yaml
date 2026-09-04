@@ -1,0 +1,241 @@
+# Required variables (export in environment):
+#   CP_HOST             - Control plane VIP address (e.g. 10.30.139.10)
+#   CP_PORT             - API server port (e.g. 6443)
+#   CP_LB               - Load balancer type: "kube-vip" or "" (empty = no LB)
+#   CP_SUBNET           - CIDR subnet mask for the VIP (e.g. 16, 24)
+#   VM_NAME_PREFIX      - Prefix for VM names (e.g. my-cluster)
+#   KUBERNETES_VERSION  - Kubernetes version (e.g. v1.36.1)
+#   XO_TEMPLATE_UUID    - UUID of the AlmaLinux/RHEL VM template (almalinux-prefilled)
+#   XO_POOL_UUID        - UUID of your Xen Orchestra pool
+#   XO_NETWORK_UUID     - UUID of your Xen Orchestra network
+#
+# Optional variables (clusterctl built-in defaults — not the base/ replicas):
+#   CLUSTER_NAME                - Cluster name (default: name argument)
+#   NAMESPACE                   - Target namespace (default: current namespace)
+#   CONTROL_PLANE_MACHINE_COUNT - Control plane replicas (default: 1)
+#   WORKER_MACHINE_COUNT        - Worker replicas (default: 0)
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - 172.31.0.0/16
+    services:
+      cidrBlocks:
+        - 192.168.0.0/16
+    serviceDomain: cluster.local
+  controlPlaneRef:
+    apiGroup: controlplane.cluster.x-k8s.io
+    kind: KubeadmControlPlane
+    name: ${CLUSTER_NAME}-cp
+  infrastructureRef:
+    apiGroup: vates.infrastructure.cluster.x-k8s.io
+    kind: XOCluster
+    name: ${CLUSTER_NAME}
+---
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOCluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  controlPlaneEndpoint:
+    host: ${CP_HOST}
+    port: ${CP_PORT}
+    subnet: ${CP_SUBNET}
+  controlPlaneLB: ${CP_LB}
+  injectSSHKeys: true
+---
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-cp
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      namePrefix: ${VM_NAME_PREFIX}-cp
+      templateID: ${XO_TEMPLATE_UUID}
+      poolID: ${XO_POOL_UUID}
+      resourceSet:
+        cpus: 4
+        memory: "8Gi"
+        diskSize: "30Gi"
+      networkConfig:
+        networks:
+          - networkID: ${XO_NETWORK_UUID}
+---
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      namePrefix: ${VM_NAME_PREFIX}-worker
+      templateID: ${XO_TEMPLATE_UUID}
+      poolID: ${XO_POOL_UUID}
+      resourceSet:
+        cpus: 4
+        memory: "8Gi"
+        diskSize: "30Gi"
+      networkConfig:
+        networks:
+          - networkID: ${XO_NETWORK_UUID}
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: KubeadmControlPlane
+metadata:
+  name: ${CLUSTER_NAME}-cp
+  namespace: ${NAMESPACE}
+spec:
+  version: ${KUBERNETES_VERSION}
+  replicas: ${CONTROL_PLANE_MACHINE_COUNT}
+  machineTemplate:
+    metadata:
+      labels: {}
+    spec:
+      infrastructureRef:
+        apiGroup: vates.infrastructure.cluster.x-k8s.io
+        kind: XOMachineTemplate
+        name: ${CLUSTER_NAME}-cp
+  kubeadmConfigSpec:
+    clusterConfiguration:
+      apiServer:
+        certSANs:
+          - localhost
+          - 127.0.0.1
+          - ${CP_HOST}
+    initConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          - name: cgroup-driver
+            value: systemd
+          - name: cloud-provider
+            value: external
+    joinConfiguration:
+      nodeRegistration:
+        kubeletExtraArgs:
+          - name: cgroup-driver
+            value: systemd
+          - name: cloud-provider
+            value: external
+    preKubeadmCommands:
+      - |
+        IP=$(hostname -I | awk '{print $1}')
+        hostnamectl set-hostname "cp-$(echo "$IP" | tr '.' '-')"
+        echo "$IP $(hostname) $(hostname -s)" >> /etc/hosts
+    postKubeadmCommands:
+      - |
+        cp /etc/kubernetes/super-admin.conf /tmp/kubeconfig-local.conf 2>/dev/null || cp /etc/kubernetes/admin.conf /tmp/kubeconfig-local.conf
+        sed -i 's|https://[0-9.]*:6443|https://127.0.0.1:6443|' /tmp/kubeconfig-local.conf
+        export KUBECONFIG=/tmp/kubeconfig-local.conf
+        cilium install --version 1.16.6 \
+          --set ipam.mode=cluster-pool \
+          --set devices=eth0 \
+          --set kubeProxyReplacement=false \
+          --set clustermesh.useAPIServer=false \
+          --set hubble.enabled=false
+        cilium status --wait --wait-duration=90s
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
+kind: KubeadmConfigTemplate
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      preKubeadmCommands:
+        - |
+          IP=$(hostname -I | awk '{print $1}')
+          hostnamectl set-hostname "worker-$(echo "$IP" | tr '.' '-')"
+          echo "$IP $(hostname) $(hostname -s)" >> /etc/hosts
+        - arping -I eth0 -c 3 ${CP_HOST} 2>/dev/null || true
+      joinConfiguration:
+        nodeRegistration:
+          kubeletExtraArgs:
+            - name: cgroup-driver
+              value: systemd
+            - name: cloud-provider
+              value: external
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineDeployment
+metadata:
+  name: ${CLUSTER_NAME}-md-0
+  namespace: ${NAMESPACE}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  replicas: ${WORKER_MACHINE_COUNT}
+  template:
+    spec:
+      clusterName: ${CLUSTER_NAME}
+      version: ${KUBERNETES_VERSION}
+      bootstrap:
+        configRef:
+          apiGroup: bootstrap.cluster.x-k8s.io
+          kind: KubeadmConfigTemplate
+          name: ${CLUSTER_NAME}-worker
+      infrastructureRef:
+        apiGroup: vates.infrastructure.cluster.x-k8s.io
+        kind: XOMachineTemplate
+        name: ${CLUSTER_NAME}-worker
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: ${CLUSTER_NAME}-cp
+  namespace: ${NAMESPACE}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  checks:
+    nodeStartupTimeoutSeconds: 600
+    unhealthyNodeConditions:
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/control-plane: ""
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 1
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  checks:
+    nodeStartupTimeoutSeconds: 600
+    unhealthyNodeConditions:
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/deployment-name: ${CLUSTER_NAME}-md-0
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 1
