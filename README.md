@@ -62,7 +62,46 @@ machine prefix, and the number of replicas. Then apply your overlay:
 kubectl apply -k templates/kubeadm/overlays/my-env/
 ```
 
-See `templates/kubeadm/README.md` for the complete file contents.
+See [templates/kubeadm/README.md](templates/kubeadm/README.md) for the complete file contents.
+
+### Installing the provider with clusterctl
+
+`clusterctl` needs to know where the provider lives. Register it in
+`~/.config/cluster-api/clusterctl.yaml` (the file clusterctl reads — not
+`~/.config/clusterctl/`):
+
+For **local development**, point at the local overrides refreshed by
+`make dev-overrides` (regenerates `dist/` and copies the three release assets
+into `~/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/`):
+
+```yaml
+providers:
+  - name: vates
+    type: InfrastructureProvider
+    url: file:///home/<user>/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/infrastructure-components.yaml
+```
+
+For a **published release**, point at the GitHub release instead (no repo clone
+needed):
+
+```yaml
+providers:
+  - name: vates
+    url: https://github.com/vatesfr/cluster-api-provider-vates/releases/latest/infrastructure-components.yaml
+    type: InfrastructureProvider
+```
+
+Then:
+
+```bash
+clusterctl init --infrastructure vates:v0.1.0
+clusterctl generate cluster my-cluster --infrastructure vates:v0.1.0 \
+  --control-plane-machine-count 3 --worker-machine-count 2
+```
+
+`clusterctl generate cluster` (without `--from`) uses the provider's default
+`cluster-template.yaml` — shipped in `dist/` for releases. See
+[RELEASING.md](RELEASING.md) for how to publish a release.
 
 ## Using with Talos
 
@@ -78,7 +117,7 @@ clusterctl init --bootstrap talos --control-plane talos
 > `dist/install.yaml` deploys the vates provider but **not** CAPI or the Talos
 > CRDs. If you install the vates provider this way, you must still run the
 > `clusterctl init` above for `TalosControlPlane` / `TalosConfig` to exist.
-> See `templates/talos/README.md` for both installation options.
+> See [templates/talos/README.md](templates/talos/README.md) for both installation options.
 
 The default vates RBAC only binds the kubeadm control plane (KCP). For the Talos
 flow, grant the Talos providers (CACPPT / CABPT) access to the `XOMachineTemplate`
@@ -116,7 +155,7 @@ control plane VIP. Then apply:
 kubectl apply -k templates/talos/overlays/my-env/
 ```
 
-See `templates/talos/README.md` for the complete file contents.
+See [templates/talos/README.md](templates/talos/README.md) for the complete file contents.
 
 ## Development
 
@@ -162,6 +201,10 @@ make -f Makefile.dev restart  # Restart the controller pod
 # Generate dist/ from the current source
 make release-manifests IMG=ghcr.io/vatesfr/cluster-api-provider-vates:latest
 ```
+
+`dist/` contains the three assets required by `clusterctl`:
+`infrastructure-components.yaml`, `metadata.yaml` and `cluster-template.yaml`.
+See [RELEASING.md](RELEASING.md) for the full release workflow.
 
 ## License
 

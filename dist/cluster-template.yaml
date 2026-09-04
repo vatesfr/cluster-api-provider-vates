@@ -8,6 +8,8 @@
 #   XO_TEMPLATE_UUID    - UUID of the AlmaLinux/RHEL VM template (almalinux-fromscratch)
 #   XO_POOL_UUID        - UUID of your Xen Orchestra pool
 #   XO_NETWORK_UUID     - UUID of your Xen Orchestra network
+#   XO_CNI              - CNI installed by the provider via ClusterResourceSet
+#                         (default: cilium; set to "none" to install manually)
 #
 # Optional variables (clusterctl built-in defaults — not the base/ replicas):
 #   CLUSTER_NAME                - Cluster name (default: name argument)

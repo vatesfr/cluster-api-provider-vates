@@ -163,8 +163,15 @@ release-manifests: manifests generate kustomize ## Generate release artifacts fo
 	printf '%s\n' '---' 'apiVersion: v1' 'kind: Namespace' 'metadata:' '  name: capi-system' '---' > dist/infrastructure-components.yaml
 	"$(KUSTOMIZE)" build config/default >> dist/infrastructure-components.yaml
 	cp templates/kubeadm/base/clusterctl/almalinux-fromscratch.yaml dist/cluster-template.yaml
+	cp metadata.yaml dist/
 	@echo "Release artifacts in dist/:"
 	@ls -l dist/
+
+.PHONY: dev-overrides
+dev-overrides: release-manifests ## Refresh the local clusterctl overrides from dist/ for development.
+	@mkdir -p "$(HOME)/.config/cluster-api/overrides/infrastructure-vates/v0.1.0"
+	@cp dist/infrastructure-components.yaml dist/metadata.yaml dist/cluster-template.yaml "$(HOME)/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/"
+	@echo "clusterctl overrides refreshed from dist/"
 
 ##@ Deployment
 
