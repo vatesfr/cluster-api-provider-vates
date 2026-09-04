@@ -59,16 +59,16 @@ Two approaches:
 **Option A — everything via `clusterctl` (recommended)**
 
 The vates provider is not published to the network, so configure a local file
-override **before** running `clusterctl init`.
-
-Generate the provider manifest:
+override **before** running `clusterctl init`. One command regenerates `dist/`,
+refreshes the local clusterctl overrides and creates
+`~/.config/cluster-api/clusterctl.yaml` if needed:
 
 ```bash
-make release-manifests
-make -f Makefile.dev dev-overrides   # refresh dist/ and copy the release assets into the local overrides
+make -f Makefile.dev dev-overrides
 ```
 
-Create `~/.config/cluster-api/clusterctl.yaml` (or append to it):
+If an existing `~/.config/cluster-api/clusterctl.yaml` does not register vates
+(the command warns about it), add it manually:
 
 ```yaml
 providers:

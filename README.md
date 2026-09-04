@@ -66,13 +66,19 @@ See [templates/kubeadm/README.md](templates/kubeadm/README.md) for the complete 
 
 ### Installing the provider with clusterctl
 
-`clusterctl` needs to know where the provider lives. Register it in
+`clusterctl` needs to know where the provider lives, via
 `~/.config/cluster-api/clusterctl.yaml` (the file clusterctl reads — not
-`~/.config/clusterctl/`):
+`~/.config/clusterctl/`).
 
-For **local development**, point at the local overrides refreshed by
-`make -f Makefile.dev dev-overrides` (regenerates `dist/` and copies the three release assets
-into `~/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/`):
+For **local development**, one command regenerates `dist/`, refreshes the local
+clusterctl overrides and creates the config file (if missing):
+
+```bash
+make -f Makefile.dev dev-overrides
+```
+
+If an existing config does not register vates (the command warns about it),
+add the entry manually:
 
 ```yaml
 providers:
@@ -81,7 +87,7 @@ providers:
     url: file://${HOME}/.config/cluster-api/overrides/infrastructure-vates/v0.1.0/infrastructure-components.yaml
 ```
 
-For a **published release**, point at the GitHub release instead (no repo clone
+For a **published release**, register the GitHub release instead (no repo clone
 needed):
 
 ```yaml
