@@ -35,15 +35,15 @@ func GetXOCluster(ctx context.Context, c client.Client, namespace, clusterName s
 
 // GetOwnerMachine returns the CAPI Machine that references this XOMachine
 // via OwnerReferences, avoiding a namespace-wide list.
-func GetOwnerMachine(ctx context.Context, c client.Client, vatesMachine *infrastructurev1beta2.XOMachine) (*clusterv1.Machine, error) {
-	ownerRef := metav1.GetControllerOf(vatesMachine)
+func GetOwnerMachine(ctx context.Context, c client.Client, xoMachine *infrastructurev1beta2.XOMachine) (*clusterv1.Machine, error) {
+	ownerRef := metav1.GetControllerOf(xoMachine)
 	if ownerRef == nil {
 		return nil, nil
 	}
 
 	machine := &clusterv1.Machine{}
 	if err := c.Get(ctx, types.NamespacedName{
-		Namespace: vatesMachine.Namespace,
+		Namespace: xoMachine.Namespace,
 		Name:      ownerRef.Name,
 	}, machine); err != nil {
 		if client.IgnoreNotFound(err) != nil {

@@ -148,7 +148,7 @@ func MergeSSHKeysIntoCloudConfig(cloudConfig string, sshKeys []string) (string, 
 
 // injectKubeVIPIfNeeded injects kube-vip scripts into the cloud-init for a
 // control plane node when the XOCluster requests it.
-func injectKubeVIPIfNeeded(ctx context.Context, c client.Client, cloudConfig string, machine *clusterv1.Machine, vatesMachine *infrastructurev1beta2.XOMachine) (string, error) {
+func injectKubeVIPIfNeeded(ctx context.Context, c client.Client, cloudConfig string, machine *clusterv1.Machine, xoMachine *infrastructurev1beta2.XOMachine) (string, error) {
 	logger := log.FromContext(ctx)
 	if machine == nil {
 		return cloudConfig, nil
@@ -163,14 +163,14 @@ func injectKubeVIPIfNeeded(ctx context.Context, c client.Client, cloudConfig str
 		return cloudConfig, nil
 	}
 
-	vatesCluster, err := xomachine.GetXOCluster(ctx, c, vatesMachine.Namespace, clusterName)
+	xoCluster, err := xomachine.GetXOCluster(ctx, c, xoMachine.Namespace, clusterName)
 	if err != nil {
 		logger.Error(err, "Failed to get XOCluster for kube-vip injection")
 		return cloudConfig, nil
 	}
 
-	if vatesCluster != nil && vatesCluster.Spec.ControlPlaneLB != nil && *vatesCluster.Spec.ControlPlaneLB == "kube-vip" {
-		cloudConfig, err = InjectKubeVIP(ctx, c, vatesMachine, machine, vatesCluster, cloudConfig)
+	if xoCluster != nil && xoCluster.Spec.ControlPlaneLB != nil && *xoCluster.Spec.ControlPlaneLB == "kube-vip" {
+		cloudConfig, err = InjectKubeVIP(ctx, c, xoMachine, machine, xoCluster, cloudConfig)
 		if err != nil {
 			return "", err
 		}
@@ -180,7 +180,7 @@ func injectKubeVIPIfNeeded(ctx context.Context, c client.Client, cloudConfig str
 
 // resolveInjectSSHKeys reports whether the XOCluster for the machine requests
 // SSH key injection.
-func resolveInjectSSHKeys(ctx context.Context, c client.Client, machine *clusterv1.Machine, vatesMachine *infrastructurev1beta2.XOMachine) bool {
+func resolveInjectSSHKeys(ctx context.Context, c client.Client, machine *clusterv1.Machine, xoMachine *infrastructurev1beta2.XOMachine) bool {
 	if machine == nil {
 		return false
 	}
@@ -188,17 +188,17 @@ func resolveInjectSSHKeys(ctx context.Context, c client.Client, machine *cluster
 	if clusterName == "" {
 		return false
 	}
-	vatesCluster, err := xomachine.GetXOCluster(ctx, c, vatesMachine.Namespace, clusterName)
-	if err != nil || vatesCluster == nil {
+	xoCluster, err := xomachine.GetXOCluster(ctx, c, xoMachine.Namespace, clusterName)
+	if err != nil || xoCluster == nil {
 		return false
 	}
-	return vatesCluster.Spec.InjectSSHKeys
+	return xoCluster.Spec.InjectSSHKeys
 }
 
 // InjectKubeVIP injects kube-vip scripts into the cloud-init for a control plane
 // node. The caller is responsible for checking that kube-vip is enabled on the
 // VatesCluster before calling this function.
-func InjectKubeVIP(ctx context.Context, c client.Client, vatesMachine *infrastructurev1beta2.XOMachine, machine *clusterv1.Machine, vatesCluster *infrastructurev1beta2.XOCluster, cloudConfig string) (string, error) {
+func InjectKubeVIP(ctx context.Context, c client.Client, xoMachine *infrastructurev1beta2.XOMachine, machine *clusterv1.Machine, xoCluster *infrastructurev1beta2.XOCluster, cloudConfig string) (string, error) {
 	logger := log.FromContext(ctx)
 
 	if machine == nil {
@@ -210,18 +210,18 @@ func InjectKubeVIP(ctx context.Context, c client.Client, vatesMachine *infrastru
 		return cloudConfig, nil
 	}
 
-	if vatesCluster.Spec.ControlPlaneEndpoint == nil || vatesCluster.Spec.ControlPlaneEndpoint.Host == "" {
+	if xoCluster.Spec.ControlPlaneEndpoint == nil || xoCluster.Spec.ControlPlaneEndpoint.Host == "" {
 		logger.Info("Kube-vip enabled but no control plane endpoint set, skipping injection")
 		return cloudConfig, nil
 	}
 
-	endpoint := vatesCluster.Spec.ControlPlaneEndpoint
+	endpoint := xoCluster.Spec.ControlPlaneEndpoint
 	logger.Info("Injecting kube-vip scripts into cloud-init", "vip", endpoint.Host, "subnet", endpoint.Subnet)
 
 	result, err := kubevip.Inject(cloudConfig, kubevip.Config{VIP: endpoint.Host, Subnet: endpoint.Subnet})
 	if err != nil {
 		logger.Error(err, "Failed to inject kube-vip scripts into cloud-init")
-		return cloudConfig, xomachine.UpdateCondition(ctx, c, vatesMachine, metav1.ConditionFalse, "KubeVIPInjectionFailed", err.Error())
+		return cloudConfig, xomachine.UpdateCondition(ctx, c, xoMachine, metav1.ConditionFalse, "KubeVIPInjectionFailed", err.Error())
 	}
 
 	return result, nil

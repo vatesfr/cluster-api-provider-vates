@@ -54,34 +54,34 @@ var _ reconcile.Reconciler = (*XOClusterReconciler)(nil)
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 func (r *XOClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	vatesCluster := &infrastructurev1beta2.XOCluster{}
-	if err := r.Get(ctx, req.NamespacedName, vatesCluster); err != nil {
+	xoCluster := &infrastructurev1beta2.XOCluster{}
+	if err := r.Get(ctx, req.NamespacedName, xoCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
 
-	if !vatesCluster.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, vatesCluster)
+	if !xoCluster.DeletionTimestamp.IsZero() {
+		return r.reconcileDelete(ctx, xoCluster)
 	}
 
-	return r.reconcileNormal(ctx, vatesCluster)
+	return r.reconcileNormal(ctx, xoCluster)
 }
 
-func (r *XOClusterReconciler) reconcileNormal(ctx context.Context, vatesCluster *infrastructurev1beta2.XOCluster) (ctrl.Result, error) {
+func (r *XOClusterReconciler) reconcileNormal(ctx context.Context, xoCluster *infrastructurev1beta2.XOCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	if controllerutil.AddFinalizer(vatesCluster, xoClusterFinalizer) {
-		if err := r.Update(ctx, vatesCluster); err != nil {
+	if controllerutil.AddFinalizer(xoCluster, xoClusterFinalizer) {
+		if err := r.Update(ctx, xoCluster); err != nil {
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
 	}
 
-	patchBase := vatesCluster.DeepCopy()
+	patchBase := xoCluster.DeepCopy()
 
-	cluster, err := r.getOwnerCluster(ctx, vatesCluster)
+	cluster, err := r.getOwnerCluster(ctx, xoCluster)
 	if err != nil {
 		logger.Error(err, "Failed to get owner Cluster")
 		return ctrl.Result{}, err
@@ -106,13 +106,13 @@ func (r *XOClusterReconciler) reconcileNormal(ctx context.Context, vatesCluster 
 	// CONTROL PLANE ENDPOINT
 	// Priority order:
 	// 1. spec.controlPlaneEndpoint (set by user or ClusterClass topology)
-	// 2. Discover from a ready control plane VatesMachine (backward compat)
+	// 2. Discover from a ready control plane XOMachine (backward compat)
 	// -------------------------------------------------------------------------
 	needsRequeue := false
-	if vatesCluster.Status.ControlPlaneEndpoint == nil || vatesCluster.Status.ControlPlaneEndpoint.Host == "" {
-		ep := vatesCluster.Spec.ControlPlaneEndpoint
+	if xoCluster.Status.ControlPlaneEndpoint == nil || xoCluster.Status.ControlPlaneEndpoint.Host == "" {
+		ep := xoCluster.Spec.ControlPlaneEndpoint
 		if ep != nil && ep.Host != "" {
-			vatesCluster.Status.ControlPlaneEndpoint = ep
+			xoCluster.Status.ControlPlaneEndpoint = ep
 			logger.Info("Control plane endpoint set from spec", "host", ep.Host, "port", ep.Port)
 		} else {
 			endpoint, err := r.discoverControlPlaneEndpoint(ctx, cluster)
@@ -121,7 +121,7 @@ func (r *XOClusterReconciler) reconcileNormal(ctx context.Context, vatesCluster 
 				return ctrl.Result{}, err
 			}
 			if endpoint != nil {
-				vatesCluster.Status.ControlPlaneEndpoint = endpoint
+				xoCluster.Status.ControlPlaneEndpoint = endpoint
 				logger.Info("Control plane endpoint discovered from machine", "host", endpoint.Host, "port", endpoint.Port)
 			} else {
 				logger.Info("Waiting for a ready control plane machine to discover endpoint")
@@ -131,24 +131,24 @@ func (r *XOClusterReconciler) reconcileNormal(ctx context.Context, vatesCluster 
 	}
 
 	if !needsRequeue {
-		vatesCluster.Status.Ready = true
-		vatesCluster.Status.Initialization = &infrastructurev1beta2.InitializationStatus{Provisioned: true}
-		r.setCondition(vatesCluster, "Ready", metav1.ConditionTrue, "ClusterInfrastructureReady", "Cluster infrastructure is ready")
+		xoCluster.Status.Ready = true
+		xoCluster.Status.Initialization = &infrastructurev1beta2.InitializationStatus{Provisioned: true}
+		r.setCondition(xoCluster, "Ready", metav1.ConditionTrue, "ClusterInfrastructureReady", "Cluster infrastructure is ready")
 	} else {
-		r.setCondition(vatesCluster, "Ready", metav1.ConditionFalse, "WaitingForControlPlaneEndpoint", "Waiting for a ready control plane machine to discover the endpoint")
+		r.setCondition(xoCluster, "Ready", metav1.ConditionFalse, "WaitingForControlPlaneEndpoint", "Waiting for a ready control plane machine to discover the endpoint")
 	}
 
-	if err := r.Status().Patch(ctx, vatesCluster, client.MergeFrom(patchBase)); err != nil {
+	if err := r.Status().Patch(ctx, xoCluster, client.MergeFrom(patchBase)); err != nil {
 		logger.Error(err, "Failed to update XOCluster status")
 		return ctrl.Result{}, err
 	}
 
 	// CAUTION: ControlPlaneEndpoint may be nil if not yet discovered.
 	// Only log the host if the endpoint exists to avoid a nil pointer panic.
-	if vatesCluster.Status.ControlPlaneEndpoint != nil {
-		logger.Info("XOCluster reconciled", "name", vatesCluster.Name, "endpoint", vatesCluster.Status.ControlPlaneEndpoint.Host)
+	if xoCluster.Status.ControlPlaneEndpoint != nil {
+		logger.Info("XOCluster reconciled", "name", xoCluster.Name, "endpoint", xoCluster.Status.ControlPlaneEndpoint.Host)
 	} else {
-		logger.Info("XOCluster reconciled", "name", vatesCluster.Name, "endpoint", "not yet discovered")
+		logger.Info("XOCluster reconciled", "name", xoCluster.Name, "endpoint", "not yet discovered")
 	}
 
 	// If the endpoint has not been discovered yet, requeue to re-check
@@ -158,16 +158,16 @@ func (r *XOClusterReconciler) reconcileNormal(ctx context.Context, vatesCluster 
 	}
 
 	// Resolve XO credentials for this cluster (from identityRef or global fallback).
-	xoCreds, err := ResolveXOConfig(ctx, r.Client, vatesCluster.Namespace, vatesCluster.Spec.IdentityRef, r.XoCreds)
+	xoCreds, err := ResolveXOConfig(ctx, r.Client, xoCluster.Namespace, xoCluster.Spec.IdentityRef, r.XoCreds)
 	if err != nil {
 		logger.Error(err, "Failed to resolve XO credentials")
-		r.setCondition(vatesCluster, "Ready", metav1.ConditionFalse, "CredentialsResolutionFailed", err.Error())
+		r.setCondition(xoCluster, "Ready", metav1.ConditionFalse, "CredentialsResolutionFailed", err.Error())
 		return ctrl.Result{}, err
 	}
 
 	// Ensure CCM + CSI driver ConfigMaps and ClusterResourceSet exist for
 	// automatic deployment into workload clusters.
-	if err := r.reconcileAddons(ctx, vatesCluster, cluster.Name, xoCreds); err != nil {
+	if err := r.reconcileAddons(ctx, xoCluster, cluster.Name, xoCreds); err != nil {
 		logger.Error(err, "Failed to reconcile addon resources, will retry")
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
@@ -175,14 +175,14 @@ func (r *XOClusterReconciler) reconcileNormal(ctx context.Context, vatesCluster 
 	return ctrl.Result{}, nil
 }
 
-func (r *XOClusterReconciler) reconcileDelete(ctx context.Context, vatesCluster *infrastructurev1beta2.XOCluster) (ctrl.Result, error) {
+func (r *XOClusterReconciler) reconcileDelete(ctx context.Context, xoCluster *infrastructurev1beta2.XOCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	if controllerutil.ContainsFinalizer(vatesCluster, xoClusterFinalizer) {
-		logger.Info("Removing finalizer from XOCluster", "name", vatesCluster.Name)
+	if controllerutil.ContainsFinalizer(xoCluster, xoClusterFinalizer) {
+		logger.Info("Removing finalizer from XOCluster", "name", xoCluster.Name)
 
-		controllerutil.RemoveFinalizer(vatesCluster, xoClusterFinalizer)
-		if err := r.Update(ctx, vatesCluster); err != nil {
+		controllerutil.RemoveFinalizer(xoCluster, xoClusterFinalizer)
+		if err := r.Update(ctx, xoCluster); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -230,10 +230,10 @@ func (r *XOClusterReconciler) ensureClusterNameLabel(ctx context.Context, cluste
 	return nil
 }
 
-func (r *XOClusterReconciler) getOwnerCluster(ctx context.Context, vatesCluster *infrastructurev1beta2.XOCluster) (*clusterv1.Cluster, error) {
+func (r *XOClusterReconciler) getOwnerCluster(ctx context.Context, xoCluster *infrastructurev1beta2.XOCluster) (*clusterv1.Cluster, error) {
 	var ownerRef *metav1.OwnerReference
-	for i := range vatesCluster.OwnerReferences {
-		ref := &vatesCluster.OwnerReferences[i]
+	for i := range xoCluster.OwnerReferences {
+		ref := &xoCluster.OwnerReferences[i]
 		if ref.Kind == "Cluster" && ref.APIVersion == clusterv1.GroupVersion.String() {
 			ownerRef = ref
 			break
@@ -245,7 +245,7 @@ func (r *XOClusterReconciler) getOwnerCluster(ctx context.Context, vatesCluster 
 
 	cluster := &clusterv1.Cluster{}
 	if err := r.Get(ctx, types.NamespacedName{
-		Namespace: vatesCluster.Namespace,
+		Namespace: xoCluster.Namespace,
 		Name:      ownerRef.Name,
 	}, cluster); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -280,16 +280,16 @@ func (r *XOClusterReconciler) discoverControlPlaneEndpoint(ctx context.Context, 
 			continue
 		}
 
-		vatesMachine := &infrastructurev1beta2.XOMachine{}
+		xoMachine := &infrastructurev1beta2.XOMachine{}
 		if err := r.Get(ctx, types.NamespacedName{
 			Namespace: m.Namespace,
 			Name:      m.Spec.InfrastructureRef.Name,
-		}, vatesMachine); err != nil {
+		}, xoMachine); err != nil {
 			continue
 		}
 
-		if vatesMachine.Status.Ready && len(vatesMachine.Status.Addresses) > 0 {
-			for _, addr := range vatesMachine.Status.Addresses {
+		if xoMachine.Status.Ready && len(xoMachine.Status.Addresses) > 0 {
+			for _, addr := range xoMachine.Status.Addresses {
 				if addr.Type == corev1.NodeInternalIP || addr.Type == corev1.NodeExternalIP {
 					return &infrastructurev1beta2.APIEndpoint{
 						Host: addr.Address,
@@ -472,8 +472,8 @@ func (r *XOClusterReconciler) removeAddon(ctx context.Context, clusterName, addo
 // reconcileAddons creates per-cluster ConfigMaps and one ClusterResourceSet per
 // enabled addon (CCM, CSI, CNI), targeting only this cluster. Addons are
 // optional and driven by the XOCluster spec.addons field.
-func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, vatesCluster *infrastructurev1beta2.XOCluster, clusterName string, xoCreds *xok8scommon.XoConfig) error {
-	addons := defaultAddons(vatesCluster.Spec.Addons)
+func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *infrastructurev1beta2.XOCluster, clusterName string, xoCreds *xok8scommon.XoConfig) error {
+	addons := defaultAddons(xoCluster.Spec.Addons)
 
 	// -----------------------------------------------------------------------
 	// CCM (Xen Orchestra cloud-controller-manager)
@@ -512,9 +512,9 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, vatesCluster 
 	if *addons.CSI {
 		apiServerHost := "127.0.0.1"
 		apiServerPort := "6443"
-		if vatesCluster.Spec.ControlPlaneEndpoint != nil {
-			apiServerHost = vatesCluster.Spec.ControlPlaneEndpoint.Host
-			apiServerPort = fmt.Sprintf("%d", vatesCluster.Spec.ControlPlaneEndpoint.Port)
+		if xoCluster.Spec.ControlPlaneEndpoint != nil {
+			apiServerHost = xoCluster.Spec.ControlPlaneEndpoint.Host
+			apiServerPort = fmt.Sprintf("%d", xoCluster.Spec.ControlPlaneEndpoint.Port)
 		}
 		csiData := csiManifestData{
 			ApiServerHost: apiServerHost,
@@ -555,21 +555,21 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, vatesCluster 
 
 // setCondition updates or adds a condition in the XOCluster's Conditions slice.
 // LastTransitionTime is only updated when the condition status changes.
-func (r *XOClusterReconciler) setCondition(vatesCluster *infrastructurev1beta2.XOCluster, conditionType string, status metav1.ConditionStatus, reason, message string) {
+func (r *XOClusterReconciler) setCondition(xoCluster *infrastructurev1beta2.XOCluster, conditionType string, status metav1.ConditionStatus, reason, message string) {
 	now := metav1.Now()
-	for i, c := range vatesCluster.Status.Conditions {
+	for i, c := range xoCluster.Status.Conditions {
 		if c.Type == conditionType {
 			// Only update LastTransitionTime when the status actually changes
 			if c.Status != status {
-				vatesCluster.Status.Conditions[i].LastTransitionTime = now
+				xoCluster.Status.Conditions[i].LastTransitionTime = now
 			}
-			vatesCluster.Status.Conditions[i].Status = status
-			vatesCluster.Status.Conditions[i].Reason = reason
-			vatesCluster.Status.Conditions[i].Message = message
+			xoCluster.Status.Conditions[i].Status = status
+			xoCluster.Status.Conditions[i].Reason = reason
+			xoCluster.Status.Conditions[i].Message = message
 			return
 		}
 	}
-	vatesCluster.Status.Conditions = append(vatesCluster.Status.Conditions, metav1.Condition{
+	xoCluster.Status.Conditions = append(xoCluster.Status.Conditions, metav1.Condition{
 		Type:               conditionType,
 		Status:             status,
 		Reason:             reason,

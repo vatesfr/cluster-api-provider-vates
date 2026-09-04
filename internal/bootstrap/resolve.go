@@ -27,10 +27,10 @@ type ResolveBootstrapDataResult struct {
 //   - (result with machine and data) when data is available
 //   - (result with Requeue=true) when bootstrap is not yet ready
 //   - error on failure
-func ResolveBootstrapData(ctx context.Context, c client.Client, vatesMachine *infrastructurev1beta2.XOMachine) (ResolveBootstrapDataResult, error) {
+func ResolveBootstrapData(ctx context.Context, c client.Client, xoMachine *infrastructurev1beta2.XOMachine) (ResolveBootstrapDataResult, error) {
 	logger := log.FromContext(ctx)
 
-	machine, err := xomachine.GetOwnerMachine(ctx, c, vatesMachine)
+	machine, err := xomachine.GetOwnerMachine(ctx, c, xoMachine)
 	if err != nil {
 		logger.Error(err, "Failed to get owner Machine")
 		return ResolveBootstrapDataResult{}, err
@@ -49,22 +49,22 @@ func ResolveBootstrapData(ctx context.Context, c client.Client, vatesMachine *in
 		return ResolveBootstrapDataResult{
 			Machine:           machine,
 			Data:              data,
-			BootstrapProvider: DetectBootstrapProvider(vatesMachine.Spec, machine),
+			BootstrapProvider: DetectBootstrapProvider(xoMachine.Spec, machine),
 		}, nil
 	}
 
-	if vatesMachine.Spec.BootstrapData != "" {
+	if xoMachine.Spec.BootstrapData != "" {
 		logger.Info("Using inline bootstrap data from spec")
 		return ResolveBootstrapDataResult{
-			Data:              []byte(vatesMachine.Spec.BootstrapData),
-			BootstrapProvider: DetectBootstrapProvider(vatesMachine.Spec, nil),
+			Data:              []byte(xoMachine.Spec.BootstrapData),
+			BootstrapProvider: DetectBootstrapProvider(xoMachine.Spec, nil),
 		}, nil
 	}
 
 	logger.Info("No owner Machine yet and no inline bootstrap data, requeuing")
 	return ResolveBootstrapDataResult{
 		Requeue:           true,
-		BootstrapProvider: DetectBootstrapProvider(vatesMachine.Spec, nil),
+		BootstrapProvider: DetectBootstrapProvider(xoMachine.Spec, nil),
 	}, nil
 }
 

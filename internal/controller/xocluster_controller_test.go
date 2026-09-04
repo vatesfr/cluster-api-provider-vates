@@ -47,11 +47,11 @@ var _ = Describe("XOCluster Controller", func() {
 			Name:      resourceName,
 			Namespace: "default", // TODO(user):Modify as needed
 		}
-		vatesCluster := &infrastructurev1beta2.XOCluster{}
+		xoCluster := &infrastructurev1beta2.XOCluster{}
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind XOCluster")
-			err := k8sClient.Get(ctx, typeNamespacedName, vatesCluster)
+			err := k8sClient.Get(ctx, typeNamespacedName, xoCluster)
 			if err != nil && errors.IsNotFound(err) {
 				resource := &infrastructurev1beta2.XOCluster{
 					ObjectMeta: metav1.ObjectMeta{
@@ -212,10 +212,10 @@ var _ = Describe("addons", func() {
 	})
 
 	Describe("reconcileAddons", func() {
-		var vatesCluster *infrastructurev1beta2.XOCluster
+		var xoCluster *infrastructurev1beta2.XOCluster
 
 		BeforeEach(func() {
-			vatesCluster = &infrastructurev1beta2.XOCluster{
+			xoCluster = &infrastructurev1beta2.XOCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "default"},
 			}
 		})
@@ -223,9 +223,9 @@ var _ = Describe("addons", func() {
 		It("creates ccm, csi and cni ClusterResourceSets when all addons enabled", func() {
 			r.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
 			cni := "cilium"
-			vatesCluster.Spec.Addons = &infrastructurev1beta2.AddonsSpec{CNI: &cni}
+			xoCluster.Spec.Addons = &infrastructurev1beta2.AddonsSpec{CNI: &cni}
 
-			Expect(r.reconcileAddons(ctx, vatesCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok", Insecure: true})).To(Succeed())
+			Expect(r.reconcileAddons(ctx, xoCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok", Insecure: true})).To(Succeed())
 
 			for _, name := range []string{"ccm-deployment-my-cluster", "csi-deployment-my-cluster", "cni-deployment-my-cluster"} {
 				crs := &addonsv1.ClusterResourceSet{}
@@ -236,7 +236,7 @@ var _ = Describe("addons", func() {
 		It("does not create the cni ClusterResourceSet when cni is none", func() {
 			r.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
 
-			Expect(r.reconcileAddons(ctx, vatesCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok", Insecure: true})).To(Succeed())
+			Expect(r.reconcileAddons(ctx, xoCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok", Insecure: true})).To(Succeed())
 
 			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "cni-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{})).NotTo(Succeed())
 			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "ccm-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{})).To(Succeed())
@@ -245,9 +245,9 @@ var _ = Describe("addons", func() {
 		It("does not create the ccm ClusterResourceSet when ccm is disabled", func() {
 			r.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
 			disabled := false
-			vatesCluster.Spec.Addons = &infrastructurev1beta2.AddonsSpec{CCM: &disabled}
+			xoCluster.Spec.Addons = &infrastructurev1beta2.AddonsSpec{CCM: &disabled}
 
-			Expect(r.reconcileAddons(ctx, vatesCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok", Insecure: true})).To(Succeed())
+			Expect(r.reconcileAddons(ctx, xoCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok", Insecure: true})).To(Succeed())
 
 			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "ccm-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{})).NotTo(Succeed())
 			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "csi-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{})).To(Succeed())
