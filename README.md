@@ -8,12 +8,15 @@ on XenServer / XCP-ng pools as Kubernetes worker and control plane nodes.
 
 > **Prerequisites:** A management cluster (Kind, k3s, etc.), [clusterctl](https://cluster-api.sigs.k8s.io/clusterctl/overview.html), Xen Orchestra access (VM template UUID, pool UUID, network name).
 
+### 1. Install CAPI and the vates provider
+
 ```bash
-# 1. Install CAPI with ClusterClass support
-CLUSTER_TOPOLOGY=true clusterctl init --bootstrap kubeadm --control-plane kubeadm
+# 1. Install CAPI
+clusterctl init --bootstrap kubeadm --control-plane kubeadm
 
 # 2. Deploy the vates provider
 kubectl apply -f https://raw.githubusercontent.com/vatesfr/cluster-api-provider-vates/refs/heads/main/dist/install.yaml
+
 # 3. Create the XO credentials secret
 kubectl create secret generic xo-credentials -n capi-system \
   --from-literal=url="https://<your-xoa>" \
@@ -21,48 +24,37 @@ kubectl create secret generic xo-credentials -n capi-system \
   --from-literal=insecure="true"
 ```
 
-### ClusterClass and machine templates
+### 2. Create a cluster
 
 All VM templates must have **cloud-init** support enabled and **Xen guest tools**
-installed and running. Two ClusterClass variants are provided:
-
-- **`almalinux-prefilled`** — for templates that already have kubelet, kubeadm, containerd,
-  kube-vip, and Cilium images pre-installed.
-- **`almalinux-fromscratch`** — for minimal templates (just containerd + Xen guest tools).
-  The ClusterClass handles installing everything via `preKubeadmCommands`.
-
-Note: TemplateID is without PoolID in it and must be bootable.
-
-Deploy the ClusterClass (once, it is cluster-scoped):
+installed and running. Export your Xen Orchestra values and generate the cluster
+from the kubeadm template:
 
 ```bash
-kubectl apply -k templates/kubeadm/base/clusterclass/
+export CP_HOST=10.30.139.10          # control plane VIP
+export CP_PORT=6443
+export CP_LB=kube-vip
+export CP_SUBNET=16
+export VM_NAME_PREFIX=my-cluster
+export KUBERNETES_VERSION=v1.36.1
+export XO_TEMPLATE_UUID=<your-vm-template-uuid>   # no pool ID, must be bootable
+export XO_POOL_UUID=<your-pool-uuid>
+export XO_NETWORK_UUID=<your-network-uuid>
+export CONTROL_PLANE_MACHINE_COUNT=3
+export WORKER_MACHINE_COUNT=2
+
+clusterctl generate cluster my-cluster \
+  --from templates/kubeadm/base/clusterctl/almalinux-fromscratch.yaml | kubectl apply -f -
 ```
 
-The `templates/kubeadm/base/` templates use placeholders and must **not** be
-edited directly. Instead, create an **overlay** to hold your environment's
-values (real template/pool/network UUIDs, control plane endpoint).
+### 3. ClusterClass (optional)
 
-Create a directory for your environment with a `kustomization.yaml` that pulls
-in `base/` and patches each resource:
-
-```
-templates/kubeadm/overlays/my-env/
-├── kustomization.yaml
-├── patch-xomachinetemplate-cp.yaml        # templateID, poolID, networkID (CP)
-├── patch-xomachinetemplate-worker.yaml    # templateID, poolID, networkID (workers)
-└── patch-cluster.yaml                     # control plane endpoint + cluster topology
-```
-
-Wherever a YAML contains a placeholder, replace it with your Xen Orchestra
-values: template ID, pool UUID, network UUID, control plane IP/port/subnet,
-machine prefix, and the number of replicas. Then apply your overlay:
-
-```bash
-kubectl apply -k templates/kubeadm/overlays/my-env/
-```
-
-See [templates/kubeadm/README.md](templates/kubeadm/README.md) for the complete file contents.
+The kubeadm flow also ships ClusterClass-based variants (managed topologies,
+`almalinux-prefilled` / `almalinux-fromscratch`) used through the `base/` +
+`overlays/` layout. This requires ClusterTopology enabled and is an alternative
+to the flat template above. See
+[templates/kubeadm/README.md](templates/kubeadm/README.md) for the full file
+contents.
 
 ### Installing the provider with clusterctl
 
