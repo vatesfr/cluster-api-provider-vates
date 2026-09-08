@@ -156,11 +156,8 @@ See [templates/talos/README.md](templates/talos/README.md) for the complete file
 
 ## Development
 
-```bash
-make -f Makefile.dev build    # Build controller image
-make -f Makefile.dev push     # Load into Kind
-make -f Makefile.dev restart  # Restart the controller pod
-```
+Contributors building from source (build/push loop for kind and k3s,
+clusterctl overrides, tests, debugging): see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Project structure
 

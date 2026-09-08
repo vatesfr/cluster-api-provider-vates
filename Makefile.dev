@@ -2,13 +2,14 @@ CONTAINER_TOOL ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/
 NS ?= capi-system
 DEPLOY ?= vates-capi-controller-manager
 
-# A unique dev tag per invocation so kubelet is forced to pull the fresh image
-# (a plain :latest + imagePullPolicy=IfNotPresent does not re-resolve).
+# Fixed dev tag: the image is loaded onto the nodes (kind/k3s), not pulled
+# from a registry, so a stable tag + imagePullPolicy=IfNotPresent + rollout
+# restart is enough for kubelet to pick up the freshly loaded image.
 ifeq ($(origin IMG), undefined)
-IMG := ghcr.io/vatesfr/cluster-api-provider-vates:dev-$(shell date +%s)
+IMG := ghcr.io/vatesfr/cluster-api-provider-vates:dev
 endif
 
-.PHONY: build push deploy-image ensure-image restart dev
+.PHONY: build push push-k3s deploy-image ensure-image restart dev
 
 build:
 	$(MAKE) docker-build IMG=$(IMG)
@@ -18,12 +19,18 @@ push:
 	$(CONTAINER_TOOL) save $(IMG) -o /tmp/vates-capi-dev.tar && \
 	kind load image-archive /tmp/vates-capi-dev.tar --name kind
 
+# Load the image into a k3s cluster (sudo may be required if not root).
+push-k3s:
+	rm -f /tmp/vates-capi-dev.tar && \
+	$(CONTAINER_TOOL) save $(IMG) -o /tmp/vates-capi-dev.tar && \
+	k3s ctr images import /tmp/vates-capi-dev.tar
+
 # Image currently configured in the deployment.
 deploy-image:
 	@kubectl -n $(NS) get deployment/$(DEPLOY) -o jsonpath='{.spec.template.spec.containers[0].image}'
 
 ensure-image:
-	@current=$$( $(MAKE) -s deploy-image ); \
+	@current=$$(kubectl -n $(NS) get deployment/$(DEPLOY) -o jsonpath='{.spec.template.spec.containers[0].image}'); \
 	echo "built   : $(IMG)"; \
 	echo "deployed: $$current"; \
 	if [ "$$current" != "$(IMG)" ]; then \
