@@ -53,7 +53,7 @@ spec:
     port: ${CP_PORT}
     subnet: ${CP_SUBNET}
   controlPlaneLB: ${CP_LB}
-  injectSSHKeys: true
+  injectSSHKeys: false
   addons:
     cni: ${XO_CNI:-cilium}
 ---
