@@ -31,7 +31,7 @@ installed and running. Export your Xen Orchestra values and generate the cluster
 from the kubeadm template:
 
 ```bash
-export CP_HOST=10.30.139.10          # control plane VIP
+export CP_HOST=<your-cp-vip>         # control plane VIP
 export CP_PORT=6443
 export CP_LB=kube-vip
 export CP_SUBNET=16

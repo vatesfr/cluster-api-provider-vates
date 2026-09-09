@@ -12,7 +12,7 @@ kubectl pre-installed.
 ## Usage
 
 ```bash
-export HARBOR_HOST="10.30.139.100"      # optional — registry mirror
+export HARBOR_HOST="harbor.example.com"   # optional — registry mirror
 export HARBOR_CA_PATH="/path/to/ca.crt"  # optional — self-signed Harbor cert
 
 make k8s       # build qcow2 image

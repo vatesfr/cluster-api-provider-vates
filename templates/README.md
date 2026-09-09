@@ -140,7 +140,7 @@ pipe into `kubectl apply`. Each bootstrap flow ships its own self-contained
 kubelet/kubeadm at bootstrap) and `almalinux-prefilled.yaml` (pre-baked template):
 
 ```bash
-export CP_HOST=10.30.139.10
+export CP_HOST=<your-cp-vip>
 export CP_PORT=6443
 export CP_LB=kube-vip
 export CP_SUBNET=16
@@ -160,7 +160,7 @@ Use `almalinux-prefilled.yaml` instead for the pre-baked template variant.
 **Talos** (flat, immutable OS):
 
 ```bash
-export CP_VIP=10.30.139.10
+export CP_VIP=<your-cp-vip>
 export CP_SUBNET=16
 export VM_NAME_PREFIX=my-cluster
 export XO_TEMPLATE_UUID=<your-xo-talos-template-uuid>
@@ -196,7 +196,7 @@ following fields:
 | `spec.template.spec.poolID` | UUID of your Xen Orchestra pool |
 | `spec.topology.classRef.name` | ClusterClass variant to use (`vates-almalinux-prefilled` or `vates-almalinux-fromscratch`) |
 | `spec.topology.variables` | Control plane endpoint, VM name prefix, load balancer, replicas |
-| `HARBOR_HOST` (env var) | Hostname of your Harbor registry (e.g. `10.30.139.100`). Set before running `make` in `packer/` to enable containerd registry mirrors. Leave unset to pull directly from upstream. |
+| `HARBOR_HOST` (env var) | Hostname of your Harbor registry (e.g. `harbor.example.com`). Set before running `make` in `packer/` to enable containerd registry mirrors. Leave unset to pull directly from upstream. |
 | `HARBOR_CA_PATH` (env var) | Path to the Harbor CA certificate file (PEM). Required if Harbor uses a self-signed cert. Copy your Harbor CA PEM to a known path and set this variable before running `packer build`. Example: `export HARBOR_CA_PATH=/etc/pki/harbor-ca.crt`. If unset, the script skips CA installation (mirrors still work if Harbor uses a publicly-trusted CA). |
 
 These values are placeholders (`<your-xo-network-uuid>`, `<your-xo-template-uuid>`,
