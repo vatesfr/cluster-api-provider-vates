@@ -1,0 +1,25 @@
+# CAPI Cluster linking infrastructure and control plane
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: talos-cluster
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: talos-cluster
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - 172.31.0.0/16
+    services:
+      cidrBlocks:
+        - 192.168.0.0/16
+    serviceDomain: cluster.local
+  controlPlaneRef:
+    apiGroup: controlplane.cluster.x-k8s.io
+    kind: TalosControlPlane
+    name: talos-cp
+  infrastructureRef:
+    apiGroup: vates.infrastructure.cluster.x-k8s.io
+    kind: XOCluster
+    name: talos-cluster

@@ -34,12 +34,21 @@ var _ = Describe("findMainDisk", func() {
 	})
 
 	It("returns the bootable disk even when it is not first in the slice", func() {
-		cloudInit := disk("ci", "CloudInitDrive", 100, false, "1", "xvdb")
+		cloudInit := disk("ci", "XO CloudConfigDrive", 100, false, "1", "xvdb")
 		main := disk("main", "rhel-template", 2048, true, "0", "xvda")
 		result := findMainDisk([]xoclient.Disk{cloudInit, main})
 		Expect(result).NotTo(BeNil())
 		Expect(result.VDIId).To(Equal("vdi-main"))
 		Expect(result.Bootable).To(BeTrue())
+	})
+
+	It("ignores the cloud-init config drive even when it is bootable", func() {
+		cloudInitBootable := disk("ci", "XO CloudConfigDrive", 12582912, true, "1", "xvdb")
+		main := disk("main", "PFT-Talos-Nocloud", 4454350848, false, "0", "xvda")
+		result := findMainDisk([]xoclient.Disk{cloudInitBootable, main})
+		Expect(result).NotTo(BeNil())
+		Expect(result.VDIId).To(Equal("vdi-main"))
+		Expect(result.Bootable).To(BeFalse())
 	})
 
 	It("skips CD drives while looking for the bootable disk", func() {
@@ -51,7 +60,7 @@ var _ = Describe("findMainDisk", func() {
 	})
 
 	It("falls back to the lowest position, ignoring the cloud-init drive, when no disk is bootable", func() {
-		cloudInit := disk("ci", "CloudInitDrive", 100, false, "1", "xvdb")
+		cloudInit := disk("ci", "XO CloudConfigDrive", 100, false, "1", "xvdb")
 		secondary := disk("data", "data-disk", 500, false, "2", "xvdc")
 		main := disk("main", "rhel-template", 1024, false, "0", "xvda")
 		result := findMainDisk([]xoclient.Disk{cloudInit, secondary, main})
@@ -60,18 +69,17 @@ var _ = Describe("findMainDisk", func() {
 	})
 
 	It("uses the device name as a tie-breaker when positions are missing", func() {
-		cloudInit := disk("ci", "CloudInitDrive", 100, false, "", "xvdb")
+		cloudInit := disk("ci", "XO CloudConfigDrive", 100, false, "", "xvdb")
 		main := disk("main", "rhel-template", 1024, false, "", "xvda")
 		result := findMainDisk([]xoclient.Disk{cloudInit, main})
 		Expect(result).NotTo(BeNil())
 		Expect(result.VDIId).To(Equal("vdi-main"))
 	})
 
-	It("falls back to the first disk when all disks are cloud-init drives", func() {
-		cloudInitA := disk("a", "CloudInitDrive", 100, false, "0", "xvda")
-		cloudInitB := disk("b", "CloudInitDrive", 100, false, "1", "xvdb")
+	It("returns nil when all disks are cloud-init drives", func() {
+		cloudInitA := disk("a", "XO CloudConfigDrive", 100, false, "0", "xvda")
+		cloudInitB := disk("b", "XO CloudConfigDrive", 100, false, "1", "xvdb")
 		result := findMainDisk([]xoclient.Disk{cloudInitA, cloudInitB})
-		Expect(result).NotTo(BeNil())
-		Expect(result.VDIId).To(Equal("vdi-a"))
+		Expect(result).To(BeNil())
 	})
 })

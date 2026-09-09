@@ -17,6 +17,17 @@ spec:
   volumeLifecycleModes:
     - Persistent
 ---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: vates-csi
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: csi.xenorchestra.vates.tech
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: false
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:

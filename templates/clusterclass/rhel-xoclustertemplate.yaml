@@ -1,7 +1,0 @@
-apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
-kind: XOClusterTemplate
-metadata:
-  name: rhel-cluster
-spec:
-  template:
-    spec: {}

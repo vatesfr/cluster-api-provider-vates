@@ -3,7 +3,7 @@ name: Build and Push Image
 on:
   pull_request:
   push:
-    tags: ['v*']
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -40,8 +40,12 @@ jobs:
       - name: Compute tags
         id: meta
         run: |
-          TAGS="ghcr.io/vatesfr/cluster-api-provider-vates:${GITHUB_REF_NAME}"
-          TAGS="$TAGS,ghcr.io/vatesfr/cluster-api-provider-vates:latest"
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            TAGS="ghcr.io/vatesfr/cluster-api-provider-vates:pr-${GITHUB_EVENT_NUMBER}"
+          else
+            TAGS="ghcr.io/vatesfr/cluster-api-provider-vates:${GITHUB_REF_NAME}"
+            TAGS="$TAGS,ghcr.io/vatesfr/cluster-api-provider-vates:latest"
+          fi
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
       - name: Build and push

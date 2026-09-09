@@ -1,0 +1,7 @@
+# XOMachineTemplate for Talos control plane and worker nodes.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - talos-xomachinetemplate-cp.yaml
+  - talos-xomachinetemplate-worker.yaml
