@@ -17,6 +17,14 @@ func isUnmarshalError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "unmarshal")
 }
 
+// IsVMNotFoundError returns true when XO confirmed the VM does not exist
+// (HTTP 404). A distinct check is needed because the SDK surfaces transient
+// network errors and "not found" as plain errors; only the latter must allow
+// the deletion finalizer to be dropped.
+func IsVMNotFoundError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "404")
+}
+
 // ExtractBareTaskPath extracts a task ID string from an unmarshal error
 // returned by the V2 REST API when the old XO returns a bare string instead
 // of a JSON object. Returns the task path (e.g. "/rest/v0/tasks/<uuid>").
