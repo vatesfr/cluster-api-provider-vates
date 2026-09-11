@@ -7,6 +7,12 @@ packer {
   }
 }
 
+variable "k8s_version" {
+  type        = string
+  default     = "1.36.1"
+  description = "Kubernetes version baked into the template; must match the cluster KUBERNETES_VERSION."
+}
+
 locals {
   iso_url          = "https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/AlmaLinux-10-GenericCloud-latest.x86_64.qcow2"
   iso_checksum     = "file:https://repo.almalinux.org/almalinux/10/cloud/x86_64/images/CHECKSUM"
@@ -45,6 +51,7 @@ build {
   sources = ["source.qemu.alma10_k8s-node"]
 
   provisioner "shell" {
-    script = "scripts/install-k8s.sh"
+    environment_vars = ["K8S_VERSION=${var.k8s_version}"]
+    script           = "scripts/install-k8s.sh"
   }
 }

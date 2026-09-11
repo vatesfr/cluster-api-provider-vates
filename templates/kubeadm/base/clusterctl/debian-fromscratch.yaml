@@ -167,15 +167,18 @@ spec:
       - mkdir -p /etc/containerd/certs.d/registry.k8s.io && printf 'server = "https://registry.k8s.io"\n\n[host."https://mirror.gcr.io"]\n  capabilities = ["pull", "resolve"]\n' > /etc/containerd/certs.d/registry.k8s.io/hosts.toml
       - systemctl enable containerd && systemctl restart containerd
       - |
-        for f in /run/kubeadm/kubeadm.yaml /run/kubeadm/kubeadm-join-config.yaml; do
-          [ -f "$f" ] && FULL=$(grep 'kubernetesVersion:' "$f" | awk '{print $2}') && break
-        done
-        [ -z "$FULL" ] && FULL="v1.36.0"
+        FULL="${KUBERNETES_VERSION}"
         MINOR=$(echo "$FULL" | sed 's/\(v[0-9]*\.[0-9]*\).*/\1/')
+        # Pin the exact requested version so KCP does not consider the node
+        # out-of-date (and roll it forever) when the repo would install a
+        # newer patch release.
+        echo "$FULL" > /etc/kubernetes-version
         curl -fsSL "https://pkgs.k8s.io/core:/stable:/$MINOR/deb/Release.key" | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
         echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/$MINOR/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
         apt-get update
-      - apt-get install -y kubelet kubeadm kubectl
+      - |
+        VERSION=$(sed 's/^v//' /etc/kubernetes-version)
+        apt-get install -y "kubelet=$VERSION-*" "kubeadm=$VERSION-*" "kubectl=$VERSION-*"
       - apt-mark hold kubelet kubeadm kubectl
       - systemctl enable --now kubelet
 ---
@@ -222,15 +225,18 @@ spec:
         - mkdir -p /etc/containerd/certs.d/registry.k8s.io && printf 'server = "https://registry.k8s.io"\n\n[host."https://mirror.gcr.io"]\n  capabilities = ["pull", "resolve"]\n' > /etc/containerd/certs.d/registry.k8s.io/hosts.toml
         - systemctl enable containerd && systemctl restart containerd
         - |
-          for f in /run/kubeadm/kubeadm.yaml /run/kubeadm/kubeadm-join-config.yaml; do
-            [ -f "$f" ] && FULL=$(grep 'kubernetesVersion:' "$f" | awk '{print $2}') && break
-          done
-          [ -z "$FULL" ] && FULL="v1.36.0"
+          FULL="${KUBERNETES_VERSION}"
           MINOR=$(echo "$FULL" | sed 's/\(v[0-9]*\.[0-9]*\).*/\1/')
+          # Pin the exact requested version so KCP does not consider the node
+          # out-of-date (and roll it forever) when the repo would install a
+          # newer patch release.
+          echo "$FULL" > /etc/kubernetes-version
           curl -fsSL "https://pkgs.k8s.io/core:/stable:/$MINOR/deb/Release.key" | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
           echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/$MINOR/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
           apt-get update
-        - apt-get install -y kubelet kubeadm
+        - |
+          VERSION=$(sed 's/^v//' /etc/kubernetes-version)
+          apt-get install -y "kubelet=$VERSION-*" "kubeadm=$VERSION-*"
         - apt-mark hold kubelet kubeadm
         - systemctl enable --now kubelet
         - arping -I eth0 -c 3 ${CP_HOST} 2>/dev/null || true

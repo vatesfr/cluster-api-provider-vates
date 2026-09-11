@@ -53,6 +53,19 @@ use one of two variants:
 - **`almalinux-fromscratch`** — a minimal template (just containerd + Xen guest tools);
   kubelet/kubeadm are installed at bootstrap via `preKubeadmCommands`.
 
+#### Kubernetes version contract
+
+The cluster's `KUBERNETES_VERSION` must be exactly the version installed on the
+nodes, otherwise KCP considers the Machines out-of-date and rolls them forever.
+
+- **from-scratch**: `preKubeadmCommands` pins the requested version
+  (`kubelet-<version>`, `kubeadm-<version>`, `kubectl-<version>`). Requesting
+  `vX.Y.Z` installs `X.Y.Z`; bootstrap fails if the requested patch is not
+  available in the pkgs.k8s.io repository.
+- **prefilled**: the image ships a fixed version baked at build time. Build the
+  image for the target version (`make K8S_VERSION=X.Y.Z k8s` in `packer/`); a
+  cluster requesting a different version fails fast at bootstrap.
+
 Create the template in XO (e.g. import an AlmaLinux 10 cloud image, or build one
 with `packer/`). Once ready, note its **UUID** (templateID), your **pool UUID**
 (poolID) and your **network UUID**. TemplateID is without PoolID in it and must

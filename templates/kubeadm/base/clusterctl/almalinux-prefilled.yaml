@@ -137,6 +137,16 @@ spec:
         IP=$(hostname -I | awk '{print $1}')
         hostnamectl set-hostname "cp-$(echo "$IP" | tr '.' '-')"
         echo "$IP $(hostname) $(hostname -s)" >> /etc/hosts
+      - |
+        # The prefilled image ships a fixed kubelet/kubeadm version. Fail fast
+        # if the requested version differs, instead of letting KCP roll the
+        # Machine forever because the node can never become up-to-date.
+        REQUESTED="${KUBERNETES_VERSION}"
+        IMAGE_VERSION=$(cat /etc/kubernetes-version 2>/dev/null || true)
+        if [ -n "$REQUESTED" ] && [ -n "$IMAGE_VERSION" ] && [ "$(echo "$REQUESTED" | cut -c2-)" != "$IMAGE_VERSION" ]; then
+          echo "ERROR: requested Kubernetes $(echo "$REQUESTED" | cut -c2-) but the prefilled image provides $IMAGE_VERSION; rebuild the image with K8S_VERSION=$(echo "$REQUESTED" | cut -c2-) or request the matching version" >&2
+          exit 1
+        fi
 ---
 apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
 kind: KubeadmConfigTemplate
@@ -151,6 +161,16 @@ spec:
           IP=$(hostname -I | awk '{print $1}')
           hostnamectl set-hostname "worker-$(echo "$IP" | tr '.' '-')"
           echo "$IP $(hostname) $(hostname -s)" >> /etc/hosts
+        - |
+          # The prefilled image ships a fixed kubelet/kubeadm version. Fail fast
+          # if the requested version differs, instead of letting KCP roll the
+          # Machine forever because the node can never become up-to-date.
+          REQUESTED="${KUBERNETES_VERSION}"
+          IMAGE_VERSION=$(cat /etc/kubernetes-version 2>/dev/null || true)
+          if [ -n "$REQUESTED" ] && [ -n "$IMAGE_VERSION" ] && [ "$(echo "$REQUESTED" | cut -c2-)" != "$IMAGE_VERSION" ]; then
+            echo "ERROR: requested Kubernetes $(echo "$REQUESTED" | cut -c2-) but the prefilled image provides $IMAGE_VERSION; rebuild the image with K8S_VERSION=$(echo "$REQUESTED" | cut -c2-) or request the matching version" >&2
+            exit 1
+          fi
         - arping -I eth0 -c 3 ${CP_HOST} 2>/dev/null || true
       joinConfiguration:
         nodeRegistration:
