@@ -17,11 +17,12 @@ func isUnmarshalError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "unmarshal")
 }
 
-// IsVMNotFoundError returns true when XO confirmed the VM does not exist
+// IsNotFoundError returns true when XO confirmed the object does not exist
 // (HTTP 404). A distinct check is needed because the SDK surfaces transient
-// network errors and "not found" as plain errors; only the latter must allow
-// the deletion finalizer to be dropped.
-func IsVMNotFoundError(err error) bool {
+// network errors and "not found" as plain errors; only the latter must be
+// treated as an already-done operation (e.g. allow the deletion finalizer to
+// be dropped, or skip an already removed VBD).
+func IsNotFoundError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "404")
 }
 

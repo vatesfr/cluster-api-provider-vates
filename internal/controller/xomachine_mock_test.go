@@ -421,19 +421,20 @@ var _ = Describe("Reconcile", func() {
 				},
 			}
 
-			mockVM.EXPECT().
-				GetByID(gomock.Any(), vmUUID).
-				Return(&payloads.VM{ID: vmUUID}, nil)
+			pvVDI := uuid.Must(uuid.NewV4())
+			pvVBD := uuid.Must(uuid.NewV4())
 
-			pv := xoclient.Disk{VBD: xoclient.VBD{Id: uuid.NewV5(uuid.NamespaceOID, "reconcile-delete-pv").String(), Attached: true, VmId: vmUUID.String()}, VDI: xoclient.VDI{VDIId: "vdi-pv", NameLabel: "csi-pvc-data"}}
-			mockV1.EXPECT().
-				GetDisks(&xoclient.Vm{Id: vmUUID.String()}).
-				Return([]xoclient.Disk{pv}, nil)
-			mockV1.EXPECT().
-				DisconnectDisk(pv).
-				Return(nil)
+			mockVM.EXPECT().
+				GetVDIs(gomock.Any(), vmUUID, 0, "tags:/^k8s:volumeId:/").
+				Return([]*payloads.VDI{{ID: pvVDI}}, nil)
 			mockVBD.EXPECT().
-				Delete(gomock.Any(), gomock.Any()).
+				GetAll(gomock.Any(), 0, "VM:"+vmUUID.String()).
+				Return([]*payloads.VBD{{ID: pvVBD, VDI: &pvVDI, VM: vmUUID, Attached: true}}, nil)
+			mockVBD.EXPECT().
+				Disconnect(gomock.Any(), pvVBD).
+				Return("", nil)
+			mockVBD.EXPECT().
+				Delete(gomock.Any(), pvVBD).
 				Return(nil)
 
 			mockVM.EXPECT().
@@ -499,7 +500,7 @@ var _ = Describe("Reconcile", func() {
 			Expect(updated.Finalizers).To(ContainElement(xoMachineFinalizer))
 		})
 
-		It("requeues and keeps the finalizer when GetByID fails with a transient error", func() {
+		It("requeues and keeps the finalizer when listing the VM's persistent volume VDIs fails with a transient error", func() {
 			vmUUID := uuid.Must(uuid.NewV4())
 			poolUUID := uuid.Must(uuid.NewV4())
 			providerID := "xenorchestra://" + poolUUID.String() + "/" + vmUUID.String()
@@ -531,7 +532,7 @@ var _ = Describe("Reconcile", func() {
 			}
 
 			mockVM.EXPECT().
-				GetByID(gomock.Any(), vmUUID).
+				GetVDIs(gomock.Any(), vmUUID, 0, "tags:/^k8s:volumeId:/").
 				Return(nil, errors.New("API error: 500 Internal Server Error"))
 
 			_, err := r.Reconcile(ctx, reconcile.Request{
@@ -576,8 +577,16 @@ var _ = Describe("Reconcile", func() {
 			}
 
 			mockVM.EXPECT().
-				GetByID(gomock.Any(), vmUUID).
+				GetVDIs(gomock.Any(), vmUUID, 0, "tags:/^k8s:volumeId:/").
 				Return(nil, errors.New("API error: 404 Not Found - no such VM"))
+
+			mockVM.EXPECT().
+				HardShutdown(gomock.Any(), vmUUID).
+				Return("", errors.New("API error: 404 Not Found - no such VM"))
+
+			mockVM.EXPECT().
+				Delete(gomock.Any(), vmUUID).
+				Return(errors.New("API error: 404 Not Found - no such VM"))
 
 			_, err := r.Reconcile(ctx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: "test", Namespace: "default"},
@@ -587,6 +596,25 @@ var _ = Describe("Reconcile", func() {
 			updated := &infrastructurev1beta2.XOMachine{}
 			_ = r.Get(ctx, types.NamespacedName{Name: "test", Namespace: "default"}, updated)
 			Expect(updated.Finalizers).To(BeEmpty())
+		})
+
+		It("tolerates the XOMachine being already deleted while removing the finalizer", func() {
+			// The fake client holds no object: the in-flight reconcile only has a
+			// stale cached copy, so the finalizer update fails with NotFound. That
+			// race must not be reported as an error.
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			r = &XOMachineReconciler{Client: fakeClient, Scheme: scheme}
+
+			xoMachine := &infrastructurev1beta2.XOMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "already-gone",
+					Namespace:  "default",
+					Finalizers: []string{xoMachineFinalizer},
+				},
+			}
+
+			_, err := r.reconcileDelete(ctx, xoMachine)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })

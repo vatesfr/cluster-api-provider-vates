@@ -312,11 +312,7 @@ func (r *XOMachineReconciler) reconcileDelete(ctx context.Context, xoMachine *in
 		vmID, err := xok8scommon.GetVMID(*xoMachine.Status.ProviderID)
 		if err != nil {
 			logger.Error(err, "Failed to parse providerID, removing finalizer")
-			controllerutil.RemoveFinalizer(xoMachine, xoMachineFinalizer)
-			if updateErr := r.Update(ctx, xoMachine); updateErr != nil {
-				return ctrl.Result{}, updateErr
-			}
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, r.removeFinalizer(ctx, xoMachine)
 		}
 
 		xoCreds, err := r.resolveMachineCredentials(ctx, xoMachine)
@@ -332,71 +328,68 @@ func (r *XOMachineReconciler) reconcileDelete(ctx context.Context, xoMachine *in
 		}
 		if xoClient == nil {
 			logger.Info("XO credentials not configured for deletion, removing finalizer")
-			controllerutil.RemoveFinalizer(xoMachine, xoMachineFinalizer)
-			if updateErr := r.Update(ctx, xoMachine); updateErr != nil {
-				return ctrl.Result{}, updateErr
-			}
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, r.removeFinalizer(ctx, xoMachine)
 		}
 
-		vm, getErr := xoClient.Client.VM().GetByID(ctx, vmID)
-		if getErr != nil {
-			if !xomachine.IsVMNotFoundError(getErr) {
-				logger.Error(getErr, "Failed to get VM for deletion, requeuing", "id", vmID.String())
-				return ctrl.Result{}, getErr
-			}
-			logger.Info("VM not found, skipping persistent volume disk detach", "id", vmID.String(), "error", getErr)
-		} else if vm != nil {
-			logger.Info("Detaching persistent volume disks before VM deletion", "id", vmID.String())
-			if err := xomachine.DetachPersistentVolumes(ctx, xoClient, vm); err != nil {
-				logger.Error(err, "Failed to detach persistent volume disks, requeuing (VM deletion would destroy the PV data)", "id", vmID.String())
-				return ctrl.Result{}, err
-			}
+		logger.Info("Detaching persistent volume disks before VM deletion", "id", vmID.String())
+		if err := xomachine.DetachPersistentVolumes(ctx, xoClient, vmID); err != nil {
+			logger.Error(err, "Failed to detach persistent volume disks, requeuing (VM deletion would destroy the PV data)", "id", vmID.String())
+			return ctrl.Result{}, err
+		}
 
-			logger.Info("Stopping VM", "id", vmID.String())
-			taskID, hardErr := xoClient.Client.VM().HardShutdown(ctx, vmID)
-			if hardErr != nil {
-				if strings.Contains(hardErr.Error(), "unmarshal") {
-					if taskPath, extractErr := xomachine.ExtractBareTaskPath(hardErr); extractErr == nil && taskPath != "" {
-						logger.Info("HardShutdown issued via bare task, waiting", "id", vmID.String(), "task", taskPath)
-						if task, waitErr := xoClient.Client.Task().Wait(ctx, taskPath); waitErr != nil {
-							logger.Info("HardShutdown bare task wait failed, continuing cleanup", "id", vmID.String(), "task", taskPath, "error", waitErr)
-						} else if task.Status != payloads.Success {
-							logger.Info("HardShutdown bare task not successful, continuing cleanup", "id", vmID.String(), "task", taskPath, "status", task.Status)
-						}
-					} else {
-						logger.Info("HardShutdown bare task extraction failed, continuing cleanup", "id", vmID.String(), "error", hardErr)
+		logger.Info("Stopping VM", "id", vmID.String())
+		taskID, hardErr := xoClient.Client.VM().HardShutdown(ctx, vmID)
+		if hardErr != nil {
+			if strings.Contains(hardErr.Error(), "unmarshal") {
+				if taskPath, extractErr := xomachine.ExtractBareTaskPath(hardErr); extractErr == nil && taskPath != "" {
+					logger.Info("HardShutdown issued via bare task, waiting", "id", vmID.String(), "task", taskPath)
+					if task, waitErr := xoClient.Client.Task().Wait(ctx, taskPath); waitErr != nil {
+						logger.Info("HardShutdown bare task wait failed, continuing cleanup", "id", vmID.String(), "task", taskPath, "error", waitErr)
+					} else if task.Status != payloads.Success {
+						logger.Info("HardShutdown bare task not successful, continuing cleanup", "id", vmID.String(), "task", taskPath, "status", task.Status)
 					}
 				} else {
-					logger.Info("HardShutdown failed or VM already stopped", "id", vmID.String(), "error", hardErr)
+					logger.Info("HardShutdown bare task extraction failed, continuing cleanup", "id", vmID.String(), "error", hardErr)
 				}
-			} else if task, waitErr := xoClient.Client.Task().Wait(ctx, taskID); waitErr != nil {
-				logger.Info("HardShutdown task wait failed, continuing cleanup", "id", vmID.String(), "task", taskID, "error", waitErr)
-			} else if task.Status != payloads.Success {
-				logger.Info("HardShutdown task not successful, continuing cleanup", "id", vmID.String(), "task", taskID, "status", task.Status)
-			}
-
-			logger.Info("Deleting VM", "id", vmID.String())
-			delErr := xoClient.Client.VM().Delete(ctx, vmID)
-			if delErr == nil {
-				logger.Info("VM deleted", "id", vmID.String())
-			} else if strings.Contains(delErr.Error(), "unmarshal") {
-				logger.Info("VM deleted (unmarshal from old API)", "id", vmID.String())
-			} else if xomachine.IsVMNotFoundError(delErr) {
-				logger.Info("VM already deleted", "id", vmID.String(), "error", delErr)
 			} else {
-				logger.Error(delErr, "Failed to delete VM, requeuing", "id", vmID.String())
-				return ctrl.Result{}, delErr
+				logger.Info("HardShutdown failed or VM already stopped", "id", vmID.String(), "error", hardErr)
 			}
+		} else if task, waitErr := xoClient.Client.Task().Wait(ctx, taskID); waitErr != nil {
+			logger.Info("HardShutdown task wait failed, continuing cleanup", "id", vmID.String(), "task", taskID, "error", waitErr)
+		} else if task.Status != payloads.Success {
+			logger.Info("HardShutdown task not successful, continuing cleanup", "id", vmID.String(), "task", taskID, "status", task.Status)
+		}
+
+		logger.Info("Deleting VM", "id", vmID.String())
+		delErr := xoClient.Client.VM().Delete(ctx, vmID)
+		if delErr == nil {
+			logger.Info("VM deleted", "id", vmID.String())
+		} else if xomachine.IsNotFoundError(delErr) {
+			logger.Info("VM already deleted", "id", vmID.String(), "error", delErr)
+		} else if strings.Contains(delErr.Error(), "unmarshal") {
+			logger.Info("VM deleted (unmarshal from old API)", "id", vmID.String())
+		} else {
+			logger.Error(delErr, "Failed to delete VM, requeuing", "id", vmID.String())
+			return ctrl.Result{}, delErr
 		}
 	}
 
-	controllerutil.RemoveFinalizer(xoMachine, xoMachineFinalizer)
-	if err := r.Update(ctx, xoMachine); err != nil {
+	if err := r.removeFinalizer(ctx, xoMachine); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// removeFinalizer removes the XOMachine finalizer and persists the change.
+// A NotFound error means the object was already deleted (e.g. another
+// reconcile removed the finalizer concurrently), which is not an error.
+func (r *XOMachineReconciler) removeFinalizer(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine) error {
+	controllerutil.RemoveFinalizer(xoMachine, xoMachineFinalizer)
+	if err := r.Update(ctx, xoMachine); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
 }
 
 // resolveMachineCredentials resolves the XO credentials for a XOMachine.
