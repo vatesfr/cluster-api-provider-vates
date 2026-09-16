@@ -96,124 +96,147 @@ var _ = Describe("findMainDisk", func() {
 	})
 })
 
-var _ = Describe("isPersistentVolumeDisk", func() {
-	It("detects a disk by its csi- name label prefix", func() {
-		d := disk("1", "csi-pvc-data", 1024, false, "0", "xvda")
-		Expect(isPersistentVolumeDisk(d)).To(BeTrue())
-	})
-
-	It("detects a disk by its k8s:volumeId tag, even without a csi- prefix", func() {
-		d := disk("1", "renamed-volume", 1024, false, "0", "xvda")
-		d.Tags = []string{"k8s:volumeId:vol-123"}
-		Expect(isPersistentVolumeDisk(d)).To(BeTrue())
-	})
-
-	It("returns false for a non-CSI disk", func() {
-		osDisk := disk("1", "rhel-template", 1024, true, "0", "xvda")
-		Expect(isPersistentVolumeDisk(osDisk)).To(BeFalse())
-	})
-
-	It("returns false for a cloud-init config drive", func() {
-		ci := disk("2", "XO CloudConfigDrive", 100, false, "1", "xvdb")
-		Expect(isPersistentVolumeDisk(ci)).To(BeFalse())
-	})
-
-	It("returns false for a CD-ROM", func() {
-		cd := xoclient.Disk{VBD: xoclient.VBD{Id: "vbd-cd", IsCdDrive: true}}
-		Expect(isPersistentVolumeDisk(cd)).To(BeFalse())
-	})
-})
-
 var _ = Describe("DetachPersistentVolumes", func() {
+	const pvFilter = "tags:/^k8s:volumeId:/"
+
 	var (
-		ctrl    *gomock.Controller
-		mockV1  *MockXOClient
-		mockLib *k8smocks.MockLibrary
-		mockVBD *MockVBD
-		xo      *xok8scommon.XoClient
+		ctrl     *gomock.Controller
+		mockLib  *k8smocks.MockLibrary
+		mockVM   *k8smocks.MockVM
+		mockVBD  *MockVBD
+		mockTask *MockTask
+		xo       *xok8scommon.XoClient
+		vmID     uuid.UUID
 	)
 
 	BeforeEach(func() {
 		ctrl = gomock.NewController(GinkgoT())
-		mockV1 = NewMockXOClient(ctrl)
 		mockLib = k8smocks.NewMockLibrary(ctrl)
+		mockVM = k8smocks.NewMockVM(ctrl)
 		mockVBD = NewMockVBD(ctrl)
-		mockLib.EXPECT().V1Client().Return(mockV1).AnyTimes()
+		mockTask = NewMockTask(ctrl)
+		mockLib.EXPECT().VM().Return(mockVM).AnyTimes()
 		mockLib.EXPECT().VBD().Return(mockVBD).AnyTimes()
+		mockLib.EXPECT().Task().Return(mockTask).AnyTimes()
 		xo = &xok8scommon.XoClient{Client: mockLib}
+		vmID = uuid.Must(uuid.NewV4())
 	})
 
 	AfterEach(func() {
 		ctrl.Finish()
 	})
 
-	It("detaches attached CSI disks but never deletes them", func() {
-		pv := disk("pv", "csi-pvc-data", 1024, false, "2", "xvdc")
-		pv.Attached = true
-		osDisk := disk("os", "rhel-template", 2048, true, "0", "xvda")
-		osDisk.Attached = true
-		ci := disk("ci", "XO CloudConfigDrive", 100, false, "1", "xvdb")
-		ci.Attached = true
+	It("removes the VBD of a tagged VDI and leaves the other disks alone", func() {
+		rootVDI := uuid.Must(uuid.NewV4())
+		pvVDI := uuid.Must(uuid.NewV4())
+		rootVBD := uuid.Must(uuid.NewV4())
+		pvVBD := uuid.Must(uuid.NewV4())
 
-		mockV1.EXPECT().GetDisks(gomock.Any()).Return([]xoclient.Disk{pv, osDisk, ci}, nil)
-		mockV1.EXPECT().DisconnectDisk(pv).Return(nil)
-		mockVBD.EXPECT().Delete(gomock.Any(), gomock.Any()).Return(nil)
+		mockVM.EXPECT().GetVDIs(gomock.Any(), vmID, 0, pvFilter).Return([]*payloads.VDI{{ID: pvVDI}}, nil)
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "VM:"+vmID.String()).Return([]*payloads.VBD{
+			{ID: rootVBD, VDI: &rootVDI, VM: vmID, Attached: true},
+			{ID: pvVBD, VDI: &pvVDI, VM: vmID, Attached: true},
+		}, nil)
+		mockVBD.EXPECT().Disconnect(gomock.Any(), pvVBD).Return("", nil)
+		mockVBD.EXPECT().Delete(gomock.Any(), pvVBD).Return(nil)
 
-		err := DetachPersistentVolumes(context.Background(), xo, &payloads.VM{ID: uuid.Must(uuid.NewV4())})
-		Expect(err).NotTo(HaveOccurred())
+		Expect(DetachPersistentVolumes(context.Background(), xo, vmID)).To(Succeed())
 	})
 
-	It("removes the VBD of a halted VM's CSI disk (not attached) so the VDI survives vm deletion", func() {
-		pv := disk("pv", "csi-pvc-data", 1024, false, "2", "xvdc")
-		pv.Attached = false
-		osDisk := disk("os", "rhel-template", 2048, true, "0", "xvda")
-		osDisk.Attached = false
-
-		mockV1.EXPECT().GetDisks(gomock.Any()).Return([]xoclient.Disk{pv, osDisk}, nil)
-		mockVBD.EXPECT().Delete(gomock.Any(), gomock.Any()).Return(nil)
-
-		err := DetachPersistentVolumes(context.Background(), xo, &payloads.VM{ID: uuid.Must(uuid.NewV4())})
-		Expect(err).NotTo(HaveOccurred())
+	It("does nothing when the VM has no tagged VDI", func() {
+		mockVM.EXPECT().GetVDIs(gomock.Any(), vmID, 0, pvFilter).Return(nil, nil)
+		Expect(DetachPersistentVolumes(context.Background(), xo, vmID)).To(Succeed())
 	})
 
-	It("disconnects before removing the VBD when the disk is attached", func() {
-		pv := disk("pv", "csi-pvc-data", 1024, false, "2", "xvdc")
-		pv.Attached = true
+	It("removes the VBD of a halted VM's tagged VDI without disconnecting it", func() {
+		pvVDI := uuid.Must(uuid.NewV4())
+		pvVBD := uuid.Must(uuid.NewV4())
 
-		mockV1.EXPECT().GetDisks(gomock.Any()).Return([]xoclient.Disk{pv}, nil)
-		mockV1.EXPECT().DisconnectDisk(pv).Return(nil)
-		mockVBD.EXPECT().Delete(gomock.Any(), gomock.Any()).Return(nil)
+		mockVM.EXPECT().GetVDIs(gomock.Any(), vmID, 0, pvFilter).Return([]*payloads.VDI{{ID: pvVDI}}, nil)
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "VM:"+vmID.String()).Return([]*payloads.VBD{
+			{ID: pvVBD, VDI: &pvVDI, VM: vmID, Attached: false},
+		}, nil)
+		mockVBD.EXPECT().Delete(gomock.Any(), pvVBD).Return(nil)
 
-		err := DetachPersistentVolumes(context.Background(), xo, &payloads.VM{ID: uuid.Must(uuid.NewV4())})
-		Expect(err).NotTo(HaveOccurred())
+		Expect(DetachPersistentVolumes(context.Background(), xo, vmID)).To(Succeed())
 	})
 
-	It("treats a 404 from VBD deletion as already detached and continues without error", func() {
-		pv := disk("pv", "csi-pvc-data", 1024, false, "2", "xvdc")
-		pv.Attached = false
+	It("waits for the disconnect task when the disk is attached", func() {
+		pvVDI := uuid.Must(uuid.NewV4())
+		pvVBD := uuid.Must(uuid.NewV4())
 
-		mockV1.EXPECT().GetDisks(gomock.Any()).Return([]xoclient.Disk{pv}, nil)
-		mockVBD.EXPECT().Delete(gomock.Any(), gomock.Any()).Return(fmt.Errorf("API error: 404 Not Found - ..."))
+		mockVM.EXPECT().GetVDIs(gomock.Any(), vmID, 0, pvFilter).Return([]*payloads.VDI{{ID: pvVDI}}, nil)
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "VM:"+vmID.String()).Return([]*payloads.VBD{
+			{ID: pvVBD, VDI: &pvVDI, VM: vmID, Attached: true},
+		}, nil)
+		mockVBD.EXPECT().Disconnect(gomock.Any(), pvVBD).Return("task-disconnect", nil)
+		mockTask.EXPECT().Wait(gomock.Any(), "task-disconnect").Return(&payloads.Task{Status: payloads.Success}, nil)
+		mockVBD.EXPECT().Delete(gomock.Any(), pvVBD).Return(nil)
 
-		err := DetachPersistentVolumes(context.Background(), xo, &payloads.VM{ID: uuid.Must(uuid.NewV4())})
-		Expect(err).NotTo(HaveOccurred())
+		Expect(DetachPersistentVolumes(context.Background(), xo, vmID)).To(Succeed())
 	})
 
-	It("returns an error when VBD deletion fails", func() {
-		pv := disk("pv", "csi-pvc-data", 1024, false, "2", "xvdc")
-		pv.Attached = false
+	It("treats a 404 from the VBD deletion as already detached", func() {
+		pvVDI := uuid.Must(uuid.NewV4())
+		pvVBD := uuid.Must(uuid.NewV4())
 
-		mockV1.EXPECT().GetDisks(gomock.Any()).Return([]xoclient.Disk{pv}, nil)
-		mockVBD.EXPECT().Delete(gomock.Any(), gomock.Any()).Return(fmt.Errorf("API error: 500 Internal Server Error - boom"))
+		mockVM.EXPECT().GetVDIs(gomock.Any(), vmID, 0, pvFilter).Return([]*payloads.VDI{{ID: pvVDI}}, nil)
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "VM:"+vmID.String()).Return([]*payloads.VBD{
+			{ID: pvVBD, VDI: &pvVDI, VM: vmID, Attached: false},
+		}, nil)
+		mockVBD.EXPECT().Delete(gomock.Any(), pvVBD).Return(fmt.Errorf("API error: 404 Not Found - no such VBD"))
 
-		err := DetachPersistentVolumes(context.Background(), xo, &payloads.VM{ID: uuid.Must(uuid.NewV4())})
-		Expect(err).To(HaveOccurred())
+		Expect(DetachPersistentVolumes(context.Background(), xo, vmID)).To(Succeed())
 	})
 
-	It("returns an error when the V1 client is nil", func() {
-		nilLib := k8smocks.NewMockLibrary(ctrl)
-		nilLib.EXPECT().V1Client().Return(nil).AnyTimes()
-		err := DetachPersistentVolumes(context.Background(), &xok8scommon.XoClient{Client: nilLib}, &payloads.VM{ID: uuid.Must(uuid.NewV4())})
-		Expect(err).To(HaveOccurred())
+	It("returns an error when the VBD deletion fails", func() {
+		pvVDI := uuid.Must(uuid.NewV4())
+		pvVBD := uuid.Must(uuid.NewV4())
+
+		mockVM.EXPECT().GetVDIs(gomock.Any(), vmID, 0, pvFilter).Return([]*payloads.VDI{{ID: pvVDI}}, nil)
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "VM:"+vmID.String()).Return([]*payloads.VBD{
+			{ID: pvVBD, VDI: &pvVDI, VM: vmID, Attached: false},
+		}, nil)
+		mockVBD.EXPECT().Delete(gomock.Any(), pvVBD).Return(fmt.Errorf("API error: 500 Internal Server Error - boom"))
+
+		Expect(DetachPersistentVolumes(context.Background(), xo, vmID)).To(HaveOccurred())
+	})
+
+	It("returns an error when the disconnect fails", func() {
+		pvVDI := uuid.Must(uuid.NewV4())
+		pvVBD := uuid.Must(uuid.NewV4())
+
+		mockVM.EXPECT().GetVDIs(gomock.Any(), vmID, 0, pvFilter).Return([]*payloads.VDI{{ID: pvVDI}}, nil)
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "VM:"+vmID.String()).Return([]*payloads.VBD{
+			{ID: pvVBD, VDI: &pvVDI, VM: vmID, Attached: true},
+		}, nil)
+		mockVBD.EXPECT().Disconnect(gomock.Any(), pvVBD).Return("", fmt.Errorf("API error: 500 Internal Server Error - boom"))
+
+		Expect(DetachPersistentVolumes(context.Background(), xo, vmID)).To(HaveOccurred())
+	})
+
+	It("treats a 404 from the disconnect as already gone", func() {
+		pvVDI := uuid.Must(uuid.NewV4())
+		pvVBD := uuid.Must(uuid.NewV4())
+
+		mockVM.EXPECT().GetVDIs(gomock.Any(), vmID, 0, pvFilter).Return([]*payloads.VDI{{ID: pvVDI}}, nil)
+		mockVBD.EXPECT().GetAll(gomock.Any(), 0, "VM:"+vmID.String()).Return([]*payloads.VBD{
+			{ID: pvVBD, VDI: &pvVDI, VM: vmID, Attached: true},
+		}, nil)
+		mockVBD.EXPECT().Disconnect(gomock.Any(), pvVBD).Return("", fmt.Errorf("API error: 404 Not Found - no such VBD"))
+
+		Expect(DetachPersistentVolumes(context.Background(), xo, vmID)).To(Succeed())
+	})
+
+	It("is a no-op when the VM is already gone (404)", func() {
+		mockVM.EXPECT().GetVDIs(gomock.Any(), vmID, 0, pvFilter).Return(nil, fmt.Errorf("API error: 404 Not Found"))
+
+		Expect(DetachPersistentVolumes(context.Background(), xo, vmID)).To(Succeed())
+	})
+
+	It("returns an error when listing the VM's VDIs fails transiently", func() {
+		mockVM.EXPECT().GetVDIs(gomock.Any(), vmID, 0, pvFilter).Return(nil, fmt.Errorf("API error: 500 Internal Server Error"))
+
+		Expect(DetachPersistentVolumes(context.Background(), xo, vmID)).To(HaveOccurred())
 	})
 })

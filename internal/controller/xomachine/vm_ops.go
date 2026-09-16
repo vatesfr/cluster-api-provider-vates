@@ -268,79 +268,114 @@ func parseDiskPosition(position string) (int, bool) {
 	return n, true
 }
 
-// DetachPersistentVolumes detaches (but never deletes) the CSI-managed
-// persistent volume disks from the VM, so that deleting the VM cannot take
-// the PV's VDI down with it (xo-server's vm.delete removes disks by default).
-// The OS disk, config drive and CD-ROMs are left untouched: they are removed
-// together with the VM.
+// persistentVolumeTagPrefix is the VDI tag prefix the Xen Orchestra CSI driver
+// uses to mark the volumes it manages. It is the only reliable marker: the VDI
+// name label prefix is configurable per cluster (it defaults to "csi-" but can
+// be changed), while the tag is always set.
+const persistentVolumeTagPrefix = "k8s:volumeId:"
+
+// DetachPersistentVolumes removes the VBDs attaching CSI-managed persistent
+// volume VDIs to the VM, before the VM is deleted, so that deleting the VM
+// cannot take the PV data down with it (xo-server's vm.delete removes the
+// VM's disks). The VDI itself is never deleted: removing a VBD only detaches
+// it from the VM. The OS disk, config drive and CD-ROMs are left untouched:
+// they are removed together with the VM.
 //
-// Disconnecting a disk (vbd.disconnect) is not enough: it only unplugs the
-// VBD, which still references the VDI, so the VDI would still be destroyed
+// It uses two v2 REST calls and no v1 call:
+//   - the VM-scoped VDI sub-resource, filtered on the CSI tag, returns the
+//     persistent volume VDIs of this VM. The tag alone cannot be combined with
+//     the VM in a single filter on the VBD list: the xo object model flattens
+//     relations to bare UUIDs (a VBD carries only the VDI's UUID), so a VBD
+//     cannot be filtered on its VDI's tags;
+//   - the VBDs of the VM are then listed and matched against those VDIs in
+//     memory.
+//
+// Disconnecting a VBD (vbd.disconnect) is not enough: it only unplugs it,
+// leaving the VBD referencing the VDI, so the VDI would still be destroyed
 // when the VM is deleted. The VBD itself must be removed (DELETE /vbds/:id,
-// which detaches the VDI without deleting it). This also works for halted
-// VMs, whose disks are not currently attached but still reference their VDI.
+// which detaches the VDI without deleting it). This also works for halted VMs,
+// whose disks are not attached but still reference their VDI.
 //
-// It is best-effort: if the CCM/CSI driver already detached a disk (VBD
-// already gone, HTTP 404), that disk is simply skipped and is not treated as
-// an error.
-func DetachPersistentVolumes(ctx context.Context, xoClient *xok8scommon.XoClient, vm *payloads.VM) error {
+// It is best-effort: a VM or VBD already gone (HTTP 404) is not an error, so
+// the call is safe to repeat.
+func DetachPersistentVolumes(ctx context.Context, xoClient *xok8scommon.XoClient, vmID uuid.UUID) error {
 	logger := log.FromContext(ctx)
 
-	v1Client := xoClient.Client.V1Client()
-	if v1Client == nil {
-		return fmt.Errorf("v1 client not available (V1Client returned nil)")
-	}
-
-	disks, err := v1Client.GetDisks(&xoclient.Vm{Id: vm.ID.String()})
+	vdis, err := xoClient.Client.VM().GetVDIs(ctx, vmID, 0, "tags:/^"+persistentVolumeTagPrefix+"/")
 	if err != nil {
-		return fmt.Errorf("failed to get disks for VM: %w", err)
+		if IsNotFoundError(err) {
+			logger.Info("VM not found, no persistent volume to detach", "id", vmID.String())
+			return nil
+		}
+		return fmt.Errorf("failed to list persistent volume VDIs for VM %s: %w", vmID, err)
+	}
+	if len(vdis) == 0 {
+		return nil
 	}
 
-	for _, disk := range disks {
-		if !isPersistentVolumeDisk(disk) {
+	pvVDIs := make(map[uuid.UUID]struct{}, len(vdis))
+	for _, vdi := range vdis {
+		pvVDIs[vdi.ID] = struct{}{}
+	}
+
+	vbds, err := xoClient.Client.VBD().GetAll(ctx, 0, "VM:"+vmID.String())
+	if err != nil {
+		if IsNotFoundError(err) {
+			logger.Info("VM not found, no persistent volume VBD to detach", "id", vmID.String())
+			return nil
+		}
+		return fmt.Errorf("failed to list VBDs for VM %s: %w", vmID, err)
+	}
+
+	for _, vbd := range vbds {
+		if vbd.VDI == nil {
+			continue
+		}
+		if _, ok := pvVDIs[*vbd.VDI]; !ok {
 			continue
 		}
 
-		vbdID, err := uuid.FromString(disk.Id)
-		if err != nil {
-			return fmt.Errorf("invalid VBD id %q for persistent volume disk %q: %w", disk.Id, disk.NameLabel, err)
-		}
+		vbdID := vbd.ID.String()
+		vdiID := vbd.VDI.String()
 
 		// If the VM is still running, unplug the disk first so the VBD can be
 		// torn down, then remove the VBD itself (detaches the VDI from the VM
 		// without deleting it).
-		if disk.Attached {
-			if err := v1Client.DisconnectDisk(disk); err != nil {
-				logger.Error(err, "Failed to disconnect persistent volume disk", "id", vm.ID.String(), "vbd", disk.Id, "vdi", disk.VDIId, "name", disk.NameLabel)
+		if vbd.Attached {
+			taskID, err := xoClient.Client.VBD().Disconnect(ctx, vbd.ID)
+			if err != nil {
+				if IsNotFoundError(err) {
+					logger.Info("Persistent volume VBD already gone", "id", vmID.String(), "vbd", vbdID, "vdi", vdiID)
+					continue
+				}
+				logger.Error(err, "Failed to disconnect persistent volume VBD", "id", vmID.String(), "vbd", vbdID, "vdi", vdiID)
 				return err
 			}
-			logger.Info("Disconnected persistent volume disk", "id", vm.ID.String(), "vbd", disk.Id, "vdi", disk.VDIId, "name", disk.NameLabel)
+			if taskID != "" {
+				task, err := xoClient.Client.Task().Wait(ctx, taskID)
+				if err != nil {
+					logger.Error(err, "Failed to wait for persistent volume VBD disconnect", "id", vmID.String(), "vbd", vbdID, "task", taskID)
+					return err
+				}
+				if task.Status != payloads.Success {
+					return fmt.Errorf("persistent volume VBD %s disconnect task %s status: %s", vbdID, taskID, task.Status)
+				}
+			}
+			logger.Info("Disconnected persistent volume VBD", "id", vmID.String(), "vbd", vbdID, "vdi", vdiID)
 		}
 
-		if err := xoClient.Client.VBD().Delete(ctx, vbdID); err != nil {
-			if strings.Contains(err.Error(), "404") {
-				logger.Info("Persistent volume VBD already removed", "id", vm.ID.String(), "vbd", disk.Id, "vdi", disk.VDIId, "name", disk.NameLabel)
+		if err := xoClient.Client.VBD().Delete(ctx, vbd.ID); err != nil {
+			if IsNotFoundError(err) {
+				logger.Info("Persistent volume VBD already removed", "id", vmID.String(), "vbd", vbdID, "vdi", vdiID)
 				continue
 			}
-			logger.Error(err, "Failed to remove persistent volume VBD", "id", vm.ID.String(), "vbd", disk.Id, "vdi", disk.VDIId, "name", disk.NameLabel)
+			logger.Error(err, "Failed to remove persistent volume VBD", "id", vmID.String(), "vbd", vbdID, "vdi", vdiID)
 			return err
 		}
-		logger.Info("Detached persistent volume disk", "id", vm.ID.String(), "vbd", disk.Id, "vdi", disk.VDIId, "name", disk.NameLabel)
+		logger.Info("Detached persistent volume VBD", "id", vmID.String(), "vbd", vbdID, "vdi", vdiID)
 	}
 
 	return nil
-}
-
-// isPersistentVolumeDisk reports whether the disk is a persistent volume disk
-// managed by the Xen Orchestra CSI driver. Such VDIs are identifiable by their
-// "k8s:volumeId:" tag (primary) or by the "csi-" prefix in their name label.
-func isPersistentVolumeDisk(d xoclient.Disk) bool {
-	for _, tag := range d.Tags {
-		if strings.HasPrefix(tag, "k8s:volumeId:") {
-			return true
-		}
-	}
-	return strings.HasPrefix(d.NameLabel, "csi-")
 }
 
 func setCPUsIfNeeded(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM, v1Concrete *xoclient.Client, v1Ok bool) {
