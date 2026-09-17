@@ -20,6 +20,14 @@ make vhd       # convert to VHD for XenServer import
 make clean     # remove build artifacts
 ```
 
+The Kubernetes version baked into the image defaults to `1.36.1` and can be
+overridden with `K8S_VERSION`. It **must** match the `KUBERNETES_VERSION` of any
+cluster using the prefilled template, which refuses to bootstrap on a mismatch:
+
+```bash
+make K8S_VERSION=1.36.1 k8s
+```
+
 Output is written to `output-almalinux10-k8s/`.
 
 ## Registry mirrors (Harbor)

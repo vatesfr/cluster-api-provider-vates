@@ -145,11 +145,12 @@ spec:
       - swapoff -a; sed -i '/ swap /d' /etc/fstab 2>/dev/null; true
       - dnf install -y epel-release
       - |
-        for f in /run/kubeadm/kubeadm.yaml /run/kubeadm/kubeadm-join-config.yaml; do
-          [ -f "$f" ] && FULL=$(grep 'kubernetesVersion:' "$f" | awk '{print $2}') && break
-        done
-        [ -z "$FULL" ] && FULL="v1.36.0"
+        FULL="${KUBERNETES_VERSION}"
         MINOR=$(echo "$FULL" | sed 's/\(v[0-9]*\.[0-9]*\).*/\1/')
+        # Pin the exact requested version so KCP does not consider the node
+        # out-of-date (and roll it forever) when the repo would install a
+        # newer patch release.
+        echo "$FULL" > /etc/kubernetes-version
         cat <<EOF > /etc/yum.repos.d/kubernetes.repo
         [kubernetes]
         name=Kubernetes
@@ -158,7 +159,9 @@ spec:
         gpgcheck=1
         gpgkey=https://pkgs.k8s.io/core:/stable:/$MINOR/rpm/repodata/repomd.xml.key
         EOF
-      - dnf install -y --disableexcludes=kubernetes --setopt=install_weak_deps=False containerd runc kubelet kubeadm kubectl
+      - |
+        VERSION=$(sed 's/^v//' /etc/kubernetes-version)
+        dnf install -y --disableexcludes=kubernetes --setopt=install_weak_deps=False containerd runc "kubelet-$VERSION" "kubeadm-$VERSION" "kubectl-$VERSION"
       - |
         containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/' | tee /etc/containerd/config.toml
         sed -i "s|config_path = ''|config_path = '/etc/containerd/certs.d'|" /etc/containerd/config.toml
@@ -187,11 +190,12 @@ spec:
         - swapoff -a; sed -i '/ swap /d' /etc/fstab 2>/dev/null; true
         - dnf install -y epel-release
         - |
-          for f in /run/kubeadm/kubeadm.yaml /run/kubeadm/kubeadm-join-config.yaml; do
-            [ -f "$f" ] && FULL=$(grep 'kubernetesVersion:' "$f" | awk '{print $2}') && break
-          done
-          [ -z "$FULL" ] && FULL="v1.36.0"
+          FULL="${KUBERNETES_VERSION}"
           MINOR=$(echo "$FULL" | sed 's/\(v[0-9]*\.[0-9]*\).*/\1/')
+          # Pin the exact requested version so KCP does not consider the node
+          # out-of-date (and roll it forever) when the repo would install a
+          # newer patch release.
+          echo "$FULL" > /etc/kubernetes-version
           cat <<EOF > /etc/yum.repos.d/kubernetes.repo
           [kubernetes]
           name=Kubernetes
@@ -200,7 +204,9 @@ spec:
           gpgcheck=1
           gpgkey=https://pkgs.k8s.io/core:/stable:/$MINOR/rpm/repodata/repomd.xml.key
           EOF
-        - dnf install -y --disableexcludes=kubernetes --setopt=install_weak_deps=False containerd runc kubelet kubeadm
+        - |
+          VERSION=$(sed 's/^v//' /etc/kubernetes-version)
+          dnf install -y --disableexcludes=kubernetes --setopt=install_weak_deps=False containerd runc "kubelet-$VERSION" "kubeadm-$VERSION"
         - |
           containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/' | tee /etc/containerd/config.toml
           sed -i "s|config_path = ''|config_path = '/etc/containerd/certs.d'|" /etc/containerd/config.toml
