@@ -431,9 +431,6 @@ var _ = Describe("Reconcile", func() {
 				GetAll(gomock.Any(), 0, "VM:"+vmUUID.String()).
 				Return([]*payloads.VBD{{ID: pvVBD, VDI: &pvVDI, VM: vmUUID, Attached: true}}, nil)
 			mockVBD.EXPECT().
-				Disconnect(gomock.Any(), pvVBD).
-				Return("", nil)
-			mockVBD.EXPECT().
 				Delete(gomock.Any(), pvVBD).
 				Return(nil)
 

@@ -290,11 +290,10 @@ const persistentVolumeTagPrefix = "k8s:volumeId:"
 //   - the VBDs of the VM are then listed and matched against those VDIs in
 //     memory.
 //
-// Disconnecting a VBD (vbd.disconnect) is not enough: it only unplugs it,
-// leaving the VBD referencing the VDI, so the VDI would still be destroyed
-// when the VM is deleted. The VBD itself must be removed (DELETE /vbds/:id,
-// which detaches the VDI without deleting it). This also works for halted VMs,
-// whose disks are not attached but still reference their VDI.
+// The VBD itself must be removed (DELETE /vbds/:id), which detaches the VDI
+// from the VM without deleting it. XO unplugs the disk as part of the delete,
+// so no explicit disconnect is needed; this also works for halted VMs, whose
+// disks are not attached but still reference their VDI.
 //
 // It is best-effort: a VM or VBD already gone (HTTP 404) is not an error, so
 // the call is safe to repeat.
@@ -338,32 +337,9 @@ func DetachPersistentVolumes(ctx context.Context, xoClient *xok8scommon.XoClient
 		vbdID := vbd.ID.String()
 		vdiID := vbd.VDI.String()
 
-		// If the VM is still running, unplug the disk first so the VBD can be
-		// torn down, then remove the VBD itself (detaches the VDI from the VM
-		// without deleting it).
-		if vbd.Attached {
-			taskID, err := xoClient.Client.VBD().Disconnect(ctx, vbd.ID)
-			if err != nil {
-				if IsNotFoundError(err) {
-					logger.Info("Persistent volume VBD already gone", "id", vmID.String(), "vbd", vbdID, "vdi", vdiID)
-					continue
-				}
-				logger.Error(err, "Failed to disconnect persistent volume VBD", "id", vmID.String(), "vbd", vbdID, "vdi", vdiID)
-				return err
-			}
-			if taskID != "" {
-				task, err := xoClient.Client.Task().Wait(ctx, taskID)
-				if err != nil {
-					logger.Error(err, "Failed to wait for persistent volume VBD disconnect", "id", vmID.String(), "vbd", vbdID, "task", taskID)
-					return err
-				}
-				if task.Status != payloads.Success {
-					return fmt.Errorf("persistent volume VBD %s disconnect task %s status: %s", vbdID, taskID, task.Status)
-				}
-			}
-			logger.Info("Disconnected persistent volume VBD", "id", vmID.String(), "vbd", vbdID, "vdi", vdiID)
-		}
-
+		// Remove the VBD itself (detaches the VDI from the VM without deleting
+		// it). XO unplugs the disk as part of the delete, so no explicit
+		// disconnect is needed.
 		if err := xoClient.Client.VBD().Delete(ctx, vbd.ID); err != nil {
 			if IsNotFoundError(err) {
 				logger.Info("Persistent volume VBD already removed", "id", vmID.String(), "vbd", vbdID, "vdi", vdiID)
