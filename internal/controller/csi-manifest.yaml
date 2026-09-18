@@ -347,6 +347,10 @@ spec:
       serviceAccountName: csi-xenorchestra-controller-sa
       nodeSelector:
         kubernetes.io/os: linux
+        # Run the controller only on control-plane nodes: it manages the VBDs of
+        # the worker nodes, so it must survive a worker crashing (a controller
+        # running on the crashed worker could not detach its volumes).
+        node-role.kubernetes.io/control-plane: ""
       priorityClassName: system-cluster-critical
       securityContext:
         seccompProfile:

@@ -312,35 +312,29 @@ func (r *XOMachineReconciler) reconcileDelete(ctx context.Context, xoMachine *in
 		vmID, err := xok8scommon.GetVMID(*xoMachine.Status.ProviderID)
 		if err != nil {
 			logger.Error(err, "Failed to parse providerID, removing finalizer")
-			controllerutil.RemoveFinalizer(xoMachine, xoMachineFinalizer)
-			if updateErr := r.Update(ctx, xoMachine); updateErr != nil {
-				return ctrl.Result{}, updateErr
-			}
-			return ctrl.Result{}, nil
+			return ctrl.Result{}, r.removeFinalizer(ctx, xoMachine)
 		}
 
 		xoCreds, err := r.resolveMachineCredentials(ctx, xoMachine)
 		if err != nil {
-			logger.Error(err, "Failed to resolve XO credentials for VM deletion, removing finalizer")
-			controllerutil.RemoveFinalizer(xoMachine, xoMachineFinalizer)
-			if updateErr := r.Update(ctx, xoMachine); updateErr != nil {
-				return ctrl.Result{}, updateErr
-			}
-			return ctrl.Result{}, nil
+			logger.Error(err, "Failed to resolve XO credentials for VM deletion, requeuing")
+			return ctrl.Result{}, err
 		}
 
 		xoClient, err := r.newXOClient(ctx, xoCreds)
-		if err != nil || xoClient == nil {
-			if err != nil {
-				logger.Error(err, "Failed to create XO client for deletion, removing finalizer")
-			} else {
-				logger.Info("XO credentials not configured for deletion, removing finalizer")
-			}
-			controllerutil.RemoveFinalizer(xoMachine, xoMachineFinalizer)
-			if updateErr := r.Update(ctx, xoMachine); updateErr != nil {
-				return ctrl.Result{}, updateErr
-			}
-			return ctrl.Result{}, nil
+		if err != nil {
+			logger.Error(err, "Failed to create XO client for deletion, requeuing")
+			return ctrl.Result{}, err
+		}
+		if xoClient == nil {
+			logger.Info("XO credentials not configured for deletion, removing finalizer")
+			return ctrl.Result{}, r.removeFinalizer(ctx, xoMachine)
+		}
+
+		logger.Info("Detaching persistent volume disks before VM deletion", "id", vmID.String())
+		if err := xomachine.DetachPersistentVolumes(ctx, xoClient, vmID); err != nil {
+			logger.Error(err, "Failed to detach persistent volume disks, requeuing (VM deletion would destroy the PV data)", "id", vmID.String())
+			return ctrl.Result{}, err
 		}
 
 		logger.Info("Stopping VM", "id", vmID.String())
@@ -367,23 +361,35 @@ func (r *XOMachineReconciler) reconcileDelete(ctx context.Context, xoMachine *in
 		}
 
 		logger.Info("Deleting VM", "id", vmID.String())
-		if delErr := xoClient.Client.VM().Delete(ctx, vmID); delErr != nil {
-			if strings.Contains(delErr.Error(), "unmarshal") {
-				logger.Info("VM deleted (unmarshal from old API)", "id", vmID.String())
-			} else {
-				logger.Info("VM delete skipped", "id", vmID.String(), "error", delErr)
-			}
-		} else {
+		delErr := xoClient.Client.VM().Delete(ctx, vmID)
+		if delErr == nil {
 			logger.Info("VM deleted", "id", vmID.String())
+		} else if xomachine.IsNotFoundError(delErr) {
+			logger.Info("VM already deleted", "id", vmID.String(), "error", delErr)
+		} else if strings.Contains(delErr.Error(), "unmarshal") {
+			logger.Info("VM deleted (unmarshal from old API)", "id", vmID.String())
+		} else {
+			logger.Error(delErr, "Failed to delete VM, requeuing", "id", vmID.String())
+			return ctrl.Result{}, delErr
 		}
 	}
 
-	controllerutil.RemoveFinalizer(xoMachine, xoMachineFinalizer)
-	if err := r.Update(ctx, xoMachine); err != nil {
+	if err := r.removeFinalizer(ctx, xoMachine); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// removeFinalizer removes the XOMachine finalizer and persists the change.
+// A NotFound error means the object was already deleted (e.g. another
+// reconcile removed the finalizer concurrently), which is not an error.
+func (r *XOMachineReconciler) removeFinalizer(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine) error {
+	controllerutil.RemoveFinalizer(xoMachine, xoMachineFinalizer)
+	if err := r.Update(ctx, xoMachine); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+	return nil
 }
 
 // resolveMachineCredentials resolves the XO credentials for a XOMachine.
