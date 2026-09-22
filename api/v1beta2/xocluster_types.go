@@ -63,6 +63,38 @@ type AddonsSpec struct {
 	// +optional
 	// +kubebuilder:validation:Enum=none;cilium
 	CNI *string `json:"cni,omitempty"`
+
+	// NodeOutOfService configures the CCM cloud-node-out-of-service controller
+	// (Non-Graceful Node Shutdown). It applies the
+	// node.kubernetes.io/out-of-service taint to nodes whose Xen Orchestra VM is
+	// no longer running, so kube-controller-manager can force-detach their
+	// volumes instead of waiting for its 6 minute maxWaitForUnmountDuration
+	// timer. When nil, the controller is enabled with the CCM defaults.
+	// +optional
+	NodeOutOfService *NodeOutOfServiceSpec `json:"nodeOutOfService,omitempty"`
+}
+
+// NodeOutOfServiceSpec configures the CCM non-graceful node shutdown controller.
+type NodeOutOfServiceSpec struct {
+	// Enabled toggles the out-of-service taint controller. When false, the
+	// controller is not started and the CCM keeps its previous behaviour
+	// (volumes are force-detached by kube-controller-manager only after its
+	// 6 minute maxWaitForUnmountDuration timer). Defaults to true.
+	// +optional
+	// +kubebuilder:default=true
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// SyncPeriod is how often the controller reconciles the nodes. Defaults to
+	// the CCM value (10s) when unset.
+	// +optional
+	SyncPeriod *metav1.Duration `json:"syncPeriod,omitempty"`
+
+	// GracePeriod is how long a powered-off VM must stay down while its node is
+	// NotReady before the out-of-service taint is applied. A VM deleted from
+	// Xen Orchestra is tainted immediately. Defaults to the CCM value (30s)
+	// when unset.
+	// +optional
+	GracePeriod *metav1.Duration `json:"gracePeriod,omitempty"`
 }
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.

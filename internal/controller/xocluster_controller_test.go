@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -166,6 +167,8 @@ var _ = Describe("addons", func() {
 			Expect(*a.CCM).To(BeTrue())
 			Expect(*a.CSI).To(BeTrue())
 			Expect(*a.CNI).To(Equal("none"))
+			Expect(a.NodeOutOfService).NotTo(BeNil())
+			Expect(*a.NodeOutOfService.Enabled).To(BeTrue())
 		})
 
 		It("fills only the unset fields", func() {
@@ -251,6 +254,61 @@ var _ = Describe("addons", func() {
 
 			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "ccm-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{})).NotTo(Succeed())
 			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "csi-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{})).To(Succeed())
+		})
+	})
+
+	Describe("CCM manifest", func() {
+		var xoCluster *infrastructurev1beta2.XOCluster
+
+		ccmYAML := func() string {
+			cm := &corev1.ConfigMap{}
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "ccm-manifests-my-cluster"}, cm)).To(Succeed())
+			return cm.Data["ccm.yaml"]
+		}
+
+		BeforeEach(func() {
+			r.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
+			xoCluster = &infrastructurev1beta2.XOCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "default"},
+			}
+		})
+
+		It("uses the v1.2.0 image and enables the out-of-service controller by default", func() {
+			Expect(r.reconcileAddons(ctx, xoCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok"})).To(Succeed())
+
+			yaml := ccmYAML()
+			Expect(yaml).To(ContainSubstring("ghcr.io/vatesfr/xenorchestra-cloud-controller-manager:v1.2.0"))
+			Expect(yaml).To(ContainSubstring("--controllers=cloud-node,cloud-node-lifecycle,cloud-node-label-sync,cloud-node-out-of-service"))
+			Expect(yaml).To(ContainSubstring("--node-out-of-service-sync-period=10s"))
+			Expect(yaml).To(ContainSubstring("--node-out-of-service-grace-period=30s"))
+		})
+
+		It("honours the configured sync and grace periods", func() {
+			xoCluster.Spec.Addons = &infrastructurev1beta2.AddonsSpec{
+				NodeOutOfService: &infrastructurev1beta2.NodeOutOfServiceSpec{
+					SyncPeriod:  &metav1.Duration{Duration: 5 * time.Second},
+					GracePeriod: &metav1.Duration{Duration: 2 * time.Minute},
+				},
+			}
+			Expect(r.reconcileAddons(ctx, xoCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok"})).To(Succeed())
+
+			yaml := ccmYAML()
+			Expect(yaml).To(ContainSubstring("cloud-node-out-of-service"))
+			Expect(yaml).To(ContainSubstring("--node-out-of-service-sync-period=5s"))
+			Expect(yaml).To(ContainSubstring("--node-out-of-service-grace-period=2m0s"))
+		})
+
+		It("omits the out-of-service controller when disabled", func() {
+			disabled := false
+			xoCluster.Spec.Addons = &infrastructurev1beta2.AddonsSpec{
+				NodeOutOfService: &infrastructurev1beta2.NodeOutOfServiceSpec{Enabled: &disabled},
+			}
+			Expect(r.reconcileAddons(ctx, xoCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok"})).To(Succeed())
+
+			yaml := ccmYAML()
+			Expect(yaml).To(ContainSubstring("--controllers=cloud-node,cloud-node-lifecycle,cloud-node-label-sync\n"))
+			Expect(yaml).NotTo(ContainSubstring("cloud-node-out-of-service"))
+			Expect(yaml).NotTo(ContainSubstring("--node-out-of-service-"))
 		})
 	})
 })

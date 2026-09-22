@@ -16,6 +16,9 @@ rules:
   - apiGroups: [""]
     resources: [events]
     verbs: [create, patch, update]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [get, create, update]
   - apiGroups: [""]
     resources: [nodes]
     verbs: [get, list, watch, update, patch, delete]
@@ -83,12 +86,16 @@ spec:
       priorityClassName: system-cluster-critical
       containers:
         - name: xenorchestra-cloud-controller-manager
-          image: ghcr.io/vatesfr/xenorchestra-cloud-controller-manager:v1.0.0
+          image: ghcr.io/vatesfr/xenorchestra-cloud-controller-manager:v1.2.0
           args:
             - --v=2
             - --cloud-provider=xenorchestra
             - --cloud-config=/etc/xenorchestra/config.yaml
-            - --controllers=cloud-node,cloud-node-lifecycle,cloud-node-label-sync
+            - --controllers={{.Controllers}}
+{{- if .OutOfServiceEnabled}}
+            - --node-out-of-service-sync-period={{.OutOfServiceSyncPeriod}}
+            - --node-out-of-service-grace-period={{.OutOfServiceGracePeriod}}
+{{- end}}
             - --leader-elect-resource-name=cloud-controller-manager-xenorchestra
             - --use-service-account-credentials
             - --secure-port=10258

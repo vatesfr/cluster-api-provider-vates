@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"strings"
 	"text/template"
 	"time"
 
@@ -384,6 +385,31 @@ type ccmManifestData struct {
 	XOAURL      string
 	XOAToken    string
 	XOAInsecure string
+
+	// Controllers is the comma-separated --controllers list.
+	Controllers string
+	// OutOfServiceEnabled controls the cloud-node-out-of-service controller and
+	// its flags.
+	OutOfServiceEnabled     bool
+	OutOfServiceSyncPeriod  string
+	OutOfServiceGracePeriod string
+}
+
+// Defaults for the CCM cloud-node-out-of-service controller, mirroring the
+// values baked into xenorchestra-cloud-controller-manager.
+const (
+	ccmOutOfServiceSyncPeriodDefault  = 10 * time.Second
+	ccmOutOfServiceGracePeriodDefault = 30 * time.Second
+)
+
+// ccmControllers returns the comma-separated list of controllers the CCM runs,
+// optionally including the out-of-service taint controller.
+func ccmControllers(outOfService bool) string {
+	controllers := []string{"cloud-node", "cloud-node-lifecycle", "cloud-node-label-sync"}
+	if outOfService {
+		controllers = append(controllers, "cloud-node-out-of-service")
+	}
+	return strings.Join(controllers, ",")
 }
 
 // csiManifestData holds the template values for the CSI manifest.
@@ -421,6 +447,13 @@ func defaultAddons(a *infrastructurev1beta2.AddonsSpec) *infrastructurev1beta2.A
 	if a.CNI == nil {
 		none := cniNone
 		a.CNI = &none
+	}
+	if a.NodeOutOfService == nil {
+		a.NodeOutOfService = &infrastructurev1beta2.NodeOutOfServiceSpec{}
+	}
+	if a.NodeOutOfService.Enabled == nil {
+		enabled := true
+		a.NodeOutOfService.Enabled = &enabled
 	}
 	return a
 }
@@ -489,10 +522,24 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *in
 	// -----------------------------------------------------------------------
 	ccmCMName := "ccm-manifests-" + clusterName
 	if *addons.CCM {
+		outOfServiceEnabled := addons.NodeOutOfService != nil && addons.NodeOutOfService.Enabled != nil && *addons.NodeOutOfService.Enabled
+		syncPeriod := ccmOutOfServiceSyncPeriodDefault
+		if addons.NodeOutOfService != nil && addons.NodeOutOfService.SyncPeriod != nil {
+			syncPeriod = addons.NodeOutOfService.SyncPeriod.Duration
+		}
+		gracePeriod := ccmOutOfServiceGracePeriodDefault
+		if addons.NodeOutOfService != nil && addons.NodeOutOfService.GracePeriod != nil {
+			gracePeriod = addons.NodeOutOfService.GracePeriod.Duration
+		}
 		ccmData := ccmManifestData{
 			XOAURL:      xoCreds.URL,
 			XOAToken:    xoCreds.Token,
 			XOAInsecure: trueStr,
+
+			Controllers:             ccmControllers(outOfServiceEnabled),
+			OutOfServiceEnabled:     outOfServiceEnabled,
+			OutOfServiceSyncPeriod:  syncPeriod.String(),
+			OutOfServiceGracePeriod: gracePeriod.String(),
 		}
 		if xoCreds.Insecure {
 			ccmData.XOAInsecure = trueStr
