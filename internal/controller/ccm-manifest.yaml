@@ -92,8 +92,10 @@ spec:
             - --cloud-provider=xenorchestra
             - --cloud-config=/etc/xenorchestra/config.yaml
             - --controllers={{.Controllers}}
-{{- if .OutOfServiceEnabled}}
+{{- if .OutOfServiceSyncPeriod}}
             - --node-out-of-service-sync-period={{.OutOfServiceSyncPeriod}}
+{{- end}}
+{{- if .OutOfServiceGracePeriod}}
             - --node-out-of-service-grace-period={{.OutOfServiceGracePeriod}}
 {{- end}}
             - --leader-elect-resource-name=cloud-controller-manager-xenorchestra

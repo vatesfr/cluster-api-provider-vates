@@ -82,7 +82,7 @@ spec:
                   nodeOutOfService:
                     description: |-
                       NodeOutOfService configures the CCM cloud-node-out-of-service controller
-                      (Non-Graceful Node Shutdown). It applies the
+                      (Non-Graceful Node Shutdown). When enabled, the CCM applies the
                       node.kubernetes.io/out-of-service taint to nodes whose Xen Orchestra VM is
                       no longer running, so kube-controller-manager can force-detach their
                       volumes instead of waiting for its 6 minute maxWaitForUnmountDuration
@@ -90,23 +90,18 @@ spec:
                     properties:
                       enabled:
                         default: true
-                        description: |-
-                          Enabled toggles the out-of-service taint controller. When false, the
-                          controller is not started and the CCM keeps its previous behaviour
-                          (volumes are force-detached by kube-controller-manager only after its
-                          6 minute maxWaitForUnmountDuration timer). Defaults to true.
+                        description: Enabled toggles the out-of-service taint controller.
+                          Defaults to true.
                         type: boolean
                       gracePeriod:
                         description: |-
-                          GracePeriod is how long a powered-off VM must stay down while its node is
-                          NotReady before the out-of-service taint is applied. A VM deleted from
-                          Xen Orchestra is tainted immediately. Defaults to the CCM value (30s)
-                          when unset.
+                          GracePeriod overrides how long a powered-off VM must stay down while its
+                          node is NotReady before the out-of-service taint is applied. A VM deleted
+                          from Xen Orchestra is tainted immediately.
                         type: string
                       syncPeriod:
-                        description: |-
-                          SyncPeriod is how often the controller reconciles the nodes. Defaults to
-                          the CCM value (10s) when unset.
+                        description: SyncPeriod overrides how often the controller
+                          reconciles the nodes.
                         type: string
                     type: object
                 type: object

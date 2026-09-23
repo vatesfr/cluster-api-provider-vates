@@ -167,8 +167,6 @@ var _ = Describe("addons", func() {
 			Expect(*a.CCM).To(BeTrue())
 			Expect(*a.CSI).To(BeTrue())
 			Expect(*a.CNI).To(Equal("none"))
-			Expect(a.NodeOutOfService).NotTo(BeNil())
-			Expect(*a.NodeOutOfService.Enabled).To(BeTrue())
 		})
 
 		It("fills only the unset fields", func() {
@@ -273,17 +271,50 @@ var _ = Describe("addons", func() {
 			}
 		})
 
-		It("uses the v1.2.0 image and enables the out-of-service controller by default", func() {
+		It("uses the v1.2.0 image and runs the out-of-service controller by default", func() {
 			Expect(r.reconcileAddons(ctx, xoCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok"})).To(Succeed())
 
 			yaml := ccmYAML()
 			Expect(yaml).To(ContainSubstring("ghcr.io/vatesfr/xenorchestra-cloud-controller-manager:v1.2.0"))
 			Expect(yaml).To(ContainSubstring("--controllers=cloud-node,cloud-node-lifecycle,cloud-node-label-sync,cloud-node-out-of-service"))
-			Expect(yaml).To(ContainSubstring("--node-out-of-service-sync-period=10s"))
-			Expect(yaml).To(ContainSubstring("--node-out-of-service-grace-period=30s"))
 		})
 
-		It("honours the configured sync and grace periods", func() {
+		It("does not render the out-of-service flags when no override is set", func() {
+			Expect(r.reconcileAddons(ctx, xoCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok"})).To(Succeed())
+
+			Expect(ccmYAML()).NotTo(ContainSubstring("--node-out-of-service-"))
+		})
+
+		It("omits the out-of-service controller and its flags when disabled", func() {
+			disabled := false
+			xoCluster.Spec.Addons = &infrastructurev1beta2.AddonsSpec{
+				NodeOutOfService: &infrastructurev1beta2.NodeOutOfServiceSpec{
+					Enabled:     &disabled,
+					GracePeriod: &metav1.Duration{Duration: 2 * time.Minute},
+				},
+			}
+			Expect(r.reconcileAddons(ctx, xoCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok"})).To(Succeed())
+
+			yaml := ccmYAML()
+			Expect(yaml).To(ContainSubstring("--controllers=cloud-node,cloud-node-lifecycle,cloud-node-label-sync\n"))
+			Expect(yaml).NotTo(ContainSubstring("cloud-node-out-of-service"))
+			Expect(yaml).NotTo(ContainSubstring("--node-out-of-service-"))
+		})
+
+		It("renders only the flags explicitly overridden", func() {
+			xoCluster.Spec.Addons = &infrastructurev1beta2.AddonsSpec{
+				NodeOutOfService: &infrastructurev1beta2.NodeOutOfServiceSpec{
+					GracePeriod: &metav1.Duration{Duration: 2 * time.Minute},
+				},
+			}
+			Expect(r.reconcileAddons(ctx, xoCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok"})).To(Succeed())
+
+			yaml := ccmYAML()
+			Expect(yaml).To(ContainSubstring("--node-out-of-service-grace-period=2m0s"))
+			Expect(yaml).NotTo(ContainSubstring("--node-out-of-service-sync-period"))
+		})
+
+		It("renders both flags when both are overridden", func() {
 			xoCluster.Spec.Addons = &infrastructurev1beta2.AddonsSpec{
 				NodeOutOfService: &infrastructurev1beta2.NodeOutOfServiceSpec{
 					SyncPeriod:  &metav1.Duration{Duration: 5 * time.Second},
@@ -293,22 +324,8 @@ var _ = Describe("addons", func() {
 			Expect(r.reconcileAddons(ctx, xoCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok"})).To(Succeed())
 
 			yaml := ccmYAML()
-			Expect(yaml).To(ContainSubstring("cloud-node-out-of-service"))
 			Expect(yaml).To(ContainSubstring("--node-out-of-service-sync-period=5s"))
 			Expect(yaml).To(ContainSubstring("--node-out-of-service-grace-period=2m0s"))
-		})
-
-		It("omits the out-of-service controller when disabled", func() {
-			disabled := false
-			xoCluster.Spec.Addons = &infrastructurev1beta2.AddonsSpec{
-				NodeOutOfService: &infrastructurev1beta2.NodeOutOfServiceSpec{Enabled: &disabled},
-			}
-			Expect(r.reconcileAddons(ctx, xoCluster, "my-cluster", &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok"})).To(Succeed())
-
-			yaml := ccmYAML()
-			Expect(yaml).To(ContainSubstring("--controllers=cloud-node,cloud-node-lifecycle,cloud-node-label-sync\n"))
-			Expect(yaml).NotTo(ContainSubstring("cloud-node-out-of-service"))
-			Expect(yaml).NotTo(ContainSubstring("--node-out-of-service-"))
 		})
 	})
 })

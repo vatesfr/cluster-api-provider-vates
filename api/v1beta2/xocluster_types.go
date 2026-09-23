@@ -65,7 +65,7 @@ type AddonsSpec struct {
 	CNI *string `json:"cni,omitempty"`
 
 	// NodeOutOfService configures the CCM cloud-node-out-of-service controller
-	// (Non-Graceful Node Shutdown). It applies the
+	// (Non-Graceful Node Shutdown). When enabled, the CCM applies the
 	// node.kubernetes.io/out-of-service taint to nodes whose Xen Orchestra VM is
 	// no longer running, so kube-controller-manager can force-detach their
 	// volumes instead of waiting for its 6 minute maxWaitForUnmountDuration
@@ -74,25 +74,24 @@ type AddonsSpec struct {
 	NodeOutOfService *NodeOutOfServiceSpec `json:"nodeOutOfService,omitempty"`
 }
 
-// NodeOutOfServiceSpec configures the CCM non-graceful node shutdown controller.
+// NodeOutOfServiceSpec configures the CCM out-of-service controller. The
+// controller is enabled by default; it can be turned off per cluster because the
+// taint triggers a force-detach, which is destructive if it fires on a node that
+// is not actually gone. The periods are optional: when unset the corresponding
+// flag is not rendered, so the CCM keeps its own default value.
 type NodeOutOfServiceSpec struct {
-	// Enabled toggles the out-of-service taint controller. When false, the
-	// controller is not started and the CCM keeps its previous behaviour
-	// (volumes are force-detached by kube-controller-manager only after its
-	// 6 minute maxWaitForUnmountDuration timer). Defaults to true.
+	// Enabled toggles the out-of-service taint controller. Defaults to true.
 	// +optional
 	// +kubebuilder:default=true
 	Enabled *bool `json:"enabled,omitempty"`
 
-	// SyncPeriod is how often the controller reconciles the nodes. Defaults to
-	// the CCM value (10s) when unset.
+	// SyncPeriod overrides how often the controller reconciles the nodes.
 	// +optional
 	SyncPeriod *metav1.Duration `json:"syncPeriod,omitempty"`
 
-	// GracePeriod is how long a powered-off VM must stay down while its node is
-	// NotReady before the out-of-service taint is applied. A VM deleted from
-	// Xen Orchestra is tainted immediately. Defaults to the CCM value (30s)
-	// when unset.
+	// GracePeriod overrides how long a powered-off VM must stay down while its
+	// node is NotReady before the out-of-service taint is applied. A VM deleted
+	// from Xen Orchestra is tainted immediately.
 	// +optional
 	GracePeriod *metav1.Duration `json:"gracePeriod,omitempty"`
 }
