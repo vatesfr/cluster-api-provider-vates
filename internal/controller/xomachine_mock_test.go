@@ -425,6 +425,9 @@ var _ = Describe("Reconcile", func() {
 			pvVBD := uuid.Must(uuid.NewV4())
 
 			mockVM.EXPECT().
+				GetByID(gomock.Any(), vmUUID).
+				Return(&payloads.VM{ID: vmUUID, PowerState: payloads.PowerStateRunning}, nil)
+			mockVM.EXPECT().
 				GetVDIs(gomock.Any(), vmUUID, 0, "tags:/^k8s:volumeId:/").
 				Return([]*payloads.VDI{{ID: pvVDI}}, nil)
 			mockVBD.EXPECT().
@@ -454,6 +457,132 @@ var _ = Describe("Reconcile", func() {
 			updated := &infrastructurev1beta2.XOMachine{}
 			_ = r.Get(ctx, types.NamespacedName{Name: "test", Namespace: "default"}, updated)
 			Expect(updated.Finalizers).To(BeEmpty())
+		})
+
+		It("stops a paused VM before detaching its persistent volumes", func() {
+			vmUUID := uuid.Must(uuid.NewV4())
+			poolUUID := uuid.Must(uuid.NewV4())
+			providerID := "xenorchestra://" + poolUUID.String() + "/" + vmUUID.String()
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&infrastructurev1beta2.XOMachine{}).WithObjects(
+				&infrastructurev1beta2.XOMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "test",
+						Namespace:         "default",
+						Finalizers:        []string{xoMachineFinalizer},
+						DeletionTimestamp: &metav1.Time{Time: metav1.Now().Time},
+					},
+					Spec: infrastructurev1beta2.XOMachineSpec{
+						TemplateID: uuid.Must(uuid.NewV4()).String(),
+						NamePrefix: "test",
+					},
+					Status: infrastructurev1beta2.XOMachineStatus{
+						ProviderID: &providerID,
+					},
+				},
+			).Build()
+
+			r = &XOMachineReconciler{
+				Client: fakeClient,
+				Scheme: scheme,
+				newClientFunc: func(_ context.Context, _ *xok8scommon.XoConfig) (*xok8scommon.XoClient, error) {
+					return &xok8scommon.XoClient{Client: mockLib}, nil
+				},
+			}
+
+			pvVDI := uuid.Must(uuid.NewV4())
+			pvVBD := uuid.Must(uuid.NewV4())
+
+			// A paused VM cannot release its disks (XCP-ng refuses the VBD
+			// removal), so it has to be stopped before the PV VBD is detached.
+			mockVM.EXPECT().
+				GetByID(gomock.Any(), vmUUID).
+				Return(&payloads.VM{ID: vmUUID, PowerState: payloads.PowerStatePaused}, nil)
+			mockVM.EXPECT().
+				HardShutdown(gomock.Any(), vmUUID).
+				Return("task-stop", nil)
+			mockTask.EXPECT().
+				Wait(gomock.Any(), "task-stop").
+				Return(&payloads.Task{Status: payloads.Success}, nil)
+
+			mockVM.EXPECT().
+				GetVDIs(gomock.Any(), vmUUID, 0, "tags:/^k8s:volumeId:/").
+				Return([]*payloads.VDI{{ID: pvVDI}}, nil)
+			mockVBD.EXPECT().
+				GetAll(gomock.Any(), 0, "VM:"+vmUUID.String()).
+				Return([]*payloads.VBD{{ID: pvVBD, VDI: &pvVDI, VM: vmUUID, Attached: true}}, nil)
+			mockVBD.EXPECT().
+				Delete(gomock.Any(), pvVBD).
+				Return(nil)
+
+			mockVM.EXPECT().
+				HardShutdown(gomock.Any(), vmUUID).
+				Return("task-delete", nil)
+			mockTask.EXPECT().
+				Wait(gomock.Any(), "task-delete").
+				Return(&payloads.Task{Status: payloads.Success}, nil)
+
+			mockVM.EXPECT().
+				Delete(gomock.Any(), vmUUID).
+				Return(nil)
+
+			_, err := r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &infrastructurev1beta2.XOMachine{}
+			_ = r.Get(ctx, types.NamespacedName{Name: "test", Namespace: "default"}, updated)
+			Expect(updated.Finalizers).To(BeEmpty())
+		})
+
+		It("keeps the finalizer and requeues when a paused VM cannot be stopped", func() {
+			vmUUID := uuid.Must(uuid.NewV4())
+			poolUUID := uuid.Must(uuid.NewV4())
+			providerID := "xenorchestra://" + poolUUID.String() + "/" + vmUUID.String()
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&infrastructurev1beta2.XOMachine{}).WithObjects(
+				&infrastructurev1beta2.XOMachine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "test",
+						Namespace:         "default",
+						Finalizers:        []string{xoMachineFinalizer},
+						DeletionTimestamp: &metav1.Time{Time: metav1.Now().Time},
+					},
+					Spec: infrastructurev1beta2.XOMachineSpec{
+						TemplateID: uuid.Must(uuid.NewV4()).String(),
+						NamePrefix: "test",
+					},
+					Status: infrastructurev1beta2.XOMachineStatus{
+						ProviderID: &providerID,
+					},
+				},
+			).Build()
+
+			r = &XOMachineReconciler{
+				Client: fakeClient,
+				Scheme: scheme,
+				newClientFunc: func(_ context.Context, _ *xok8scommon.XoConfig) (*xok8scommon.XoClient, error) {
+					return &xok8scommon.XoClient{Client: mockLib}, nil
+				},
+			}
+
+			mockVM.EXPECT().
+				GetByID(gomock.Any(), vmUUID).
+				Return(&payloads.VM{ID: vmUUID, PowerState: payloads.PowerStatePaused}, nil)
+			mockVM.EXPECT().
+				HardShutdown(gomock.Any(), vmUUID).
+				Return("", errors.New("API error: 500 Internal Server Error - boom"))
+
+			// The detach must not be attempted while the VM is not stopped.
+			_, err := r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test", Namespace: "default"},
+			})
+			Expect(err).To(HaveOccurred())
+
+			updated := &infrastructurev1beta2.XOMachine{}
+			_ = r.Get(ctx, types.NamespacedName{Name: "test", Namespace: "default"}, updated)
+			Expect(updated.Finalizers).To(ContainElement(xoMachineFinalizer))
 		})
 
 		It("requeues and keeps the finalizer when the XO client cannot be created", func() {
@@ -529,6 +658,9 @@ var _ = Describe("Reconcile", func() {
 			}
 
 			mockVM.EXPECT().
+				GetByID(gomock.Any(), vmUUID).
+				Return(&payloads.VM{ID: vmUUID, PowerState: payloads.PowerStateRunning}, nil)
+			mockVM.EXPECT().
 				GetVDIs(gomock.Any(), vmUUID, 0, "tags:/^k8s:volumeId:/").
 				Return(nil, errors.New("API error: 500 Internal Server Error"))
 
@@ -573,6 +705,9 @@ var _ = Describe("Reconcile", func() {
 				},
 			}
 
+			mockVM.EXPECT().
+				GetByID(gomock.Any(), vmUUID).
+				Return(nil, errors.New("API error: 404 Not Found - no such VM"))
 			mockVM.EXPECT().
 				GetVDIs(gomock.Any(), vmUUID, 0, "tags:/^k8s:volumeId:/").
 				Return(nil, errors.New("API error: 404 Not Found - no such VM"))
