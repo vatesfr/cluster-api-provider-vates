@@ -74,10 +74,14 @@ type AddonsSpec struct {
 	NodeOutOfService *NodeOutOfServiceSpec `json:"nodeOutOfService,omitempty"`
 }
 
-// NodeOutOfServiceSpec configures the CCM out-of-service controller. The
-// controller is enabled by default; it can be turned off per cluster because the
-// taint triggers a force-detach, which is destructive if it fires on a node that
-// is not actually gone. The periods are optional: when unset the corresponding
+// NodeOutOfServiceSpec configures the CCM out-of-service controller
+// (Non-Graceful Node Shutdown). The controller is enabled by default; it can be
+// turned off per cluster. The CCM applies the node.kubernetes.io/out-of-service
+// taint to a node whose Xen Orchestra VM is deleted, halted, paused or suspended
+// and whose kubelet reports NotReady, so kube-controller-manager force-detaches
+// its volumes instead of waiting for its 6 minute maxWaitForUnmountDuration
+// timer: only the Kubernetes VolumeAttachment is released, so the persistent
+// volume can be reused. The periods are optional: when unset the corresponding
 // flag is not rendered, so the CCM keeps its own default value.
 type NodeOutOfServiceSpec struct {
 	// Enabled toggles the out-of-service taint controller. Defaults to true.
