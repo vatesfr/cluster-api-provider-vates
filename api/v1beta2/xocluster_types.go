@@ -63,6 +63,41 @@ type AddonsSpec struct {
 	// +optional
 	// +kubebuilder:validation:Enum=none;cilium
 	CNI *string `json:"cni,omitempty"`
+
+	// NodeOutOfService configures the CCM cloud-node-out-of-service controller
+	// (Non-Graceful Node Shutdown). When enabled, the CCM applies the
+	// node.kubernetes.io/out-of-service taint to nodes whose Xen Orchestra VM is
+	// no longer running, so kube-controller-manager can force-detach their
+	// volumes instead of waiting for its 6 minute maxWaitForUnmountDuration
+	// timer. When nil, the controller is enabled with the CCM defaults.
+	// +optional
+	NodeOutOfService *NodeOutOfServiceSpec `json:"nodeOutOfService,omitempty"`
+}
+
+// NodeOutOfServiceSpec configures the CCM out-of-service controller
+// (Non-Graceful Node Shutdown). The controller is enabled by default; it can be
+// turned off per cluster. The CCM applies the node.kubernetes.io/out-of-service
+// taint to a node whose Xen Orchestra VM is deleted, halted, paused or suspended
+// and whose kubelet reports NotReady, so kube-controller-manager force-detaches
+// its volumes instead of waiting for its 6 minute maxWaitForUnmountDuration
+// timer: only the Kubernetes VolumeAttachment is released, so the persistent
+// volume can be reused. The periods are optional: when unset the corresponding
+// flag is not rendered, so the CCM keeps its own default value.
+type NodeOutOfServiceSpec struct {
+	// Enabled toggles the out-of-service taint controller. Defaults to true.
+	// +optional
+	// +kubebuilder:default=true
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// SyncPeriod overrides how often the controller reconciles the nodes.
+	// +optional
+	SyncPeriod *metav1.Duration `json:"syncPeriod,omitempty"`
+
+	// GracePeriod overrides how long a powered-off VM must stay down while its
+	// node is NotReady before the out-of-service taint is applied. A VM deleted
+	// from Xen Orchestra is tainted immediately.
+	// +optional
+	GracePeriod *metav1.Duration `json:"gracePeriod,omitempty"`
 }
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.
