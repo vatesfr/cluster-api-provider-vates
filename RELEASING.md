@@ -58,6 +58,12 @@ This produces `dist/infrastructure-components.yaml`, `dist/metadata.yaml` and
 - Tag the release with a **valid semantic version** (e.g. `v0.1.0`).
 - Attach the three files from `dist/` as release assets:
   `infrastructure-components.yaml`, `metadata.yaml`, `cluster-template.yaml`.
+- Click **Generate release notes**: GitHub groups the merged pull requests by
+  category from `.github/release.yml` (Features, Bug fixes, Documentation,
+  Maintenance, Breaking changes). The categories are driven by **labels**, which
+  the `PR labels` workflow applies automatically from the conventional-commit
+  prefix of each pull request title (`feat(xomachine): …` → `feat`). To keep a
+  pull request out of the changelog, add the `skip-changelog` label.
 
 ## Local development (no release)
 
