@@ -1,0 +1,72 @@
+name: PR labels
+
+# Labels pull requests from their conventional-commit title so that the
+# automatically generated release notes can group them by category
+# (see .github/release.yml). Runs on pull_request_target because it only reads
+# the title/body and writes labels: nothing from the PR is checked out or run.
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened]
+
+permissions: {}
+
+jobs:
+  label:
+    permissions:
+      contents: read
+      pull-requests: write
+    name: Run on Ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - name: Label the pull request from its title
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+
+          # Conventional Commits: <type>(<scope>)!?: <description>
+          type="$(printf '%s' "$TITLE" | sed -nE 's/^([a-zA-Z]+)(\([^)]*\))?!?:.*/\1/p' | tr '[:upper:]' '[:lower:]')"
+
+          breaking=""
+          case "$TITLE" in *"!:"*) breaking=1 ;; esac
+          case "$BODY" in
+            *"BREAKING CHANGE"*|*"BREAKING-CHANGE"*) breaking=1 ;;
+          esac
+
+          case "$type" in
+            feat|feature)        label=feat ;;
+            fix|bugfix)          label=fix ;;
+            docs|doc)            label=docs ;;
+            chore)               label=chore ;;
+            refactor)            label=refactor ;;
+            build)               label=build ;;
+            ci)                  label=ci ;;
+            test)                label=test ;;
+            perf|style|revert)   label=chore ;;
+            *)                   label="" ;;
+          esac
+
+          desired="$label"
+          [ -n "$breaking" ] && desired="$desired breaking"
+          managed="feat fix docs chore refactor build ci test breaking"
+
+          current="$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name')"
+
+          # Drop the managed labels that no longer match (e.g. the title changed).
+          for l in $managed; do
+            if printf '%s\n' "$current" | grep -qx "$l" && ! printf '%s\n' "$desired" | grep -qw "$l"; then
+              gh pr edit "$PR" --repo "$REPO" --remove-label "$l" || true
+            fi
+          done
+
+          # Add the matching labels (idempotent).
+          for l in $desired; do
+            if ! printf '%s\n' "$current" | grep -qx "$l"; then
+              gh pr edit "$PR" --repo "$REPO" --add-label "$l" || true
+            fi
+          done
