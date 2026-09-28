@@ -354,6 +354,72 @@ func DetachPersistentVolumes(ctx context.Context, xoClient *xok8scommon.XoClient
 	return nil
 }
 
+// HardShutdownVM force-stops the VM and waits for the resulting XO task. It
+// tolerates the SDK's bare-task unmarshal quirk (the task is still issued) but
+// reports an error when the shutdown could not be confirmed, so callers that
+// must rely on the VM being stopped can requeue.
+func HardShutdownVM(ctx context.Context, xoClient *xok8scommon.XoClient, vmID uuid.UUID) error {
+	logger := log.FromContext(ctx)
+
+	taskID, err := xoClient.Client.VM().HardShutdown(ctx, vmID)
+	if err != nil {
+		if strings.Contains(err.Error(), "unmarshal") {
+			taskPath, extractErr := ExtractBareTaskPath(err)
+			if extractErr != nil || taskPath == "" {
+				return fmt.Errorf("extracting bare hard shutdown task for VM %s: %w", vmID, err)
+			}
+			logger.Info("HardShutdown issued via bare task, waiting", "id", vmID.String(), "task", taskPath)
+			if _, waitErr := xoClient.Client.Task().Wait(ctx, taskPath); waitErr != nil {
+				return fmt.Errorf("waiting for hard shutdown task %s: %w", taskPath, waitErr)
+			}
+			return nil
+		}
+		return fmt.Errorf("hard shutting down VM %s: %w", vmID, err)
+	}
+
+	task, waitErr := xoClient.Client.Task().Wait(ctx, taskID)
+	if waitErr != nil {
+		return fmt.Errorf("waiting for hard shutdown task %s: %w", taskID, waitErr)
+	}
+	if task.Status != payloads.Success {
+		return fmt.Errorf("hard shutdown task %s not successful: %s", taskID, task.Status)
+	}
+	return nil
+}
+
+// StopVMIfNotDetachable stops a VM whose power state prevents XCP-ng from
+// unplugging its disks. A Paused or Suspended VM cannot release a VBD
+// (XCP-ng answers OPERATION_NOT_ALLOWED), so DetachPersistentVolumes would
+// retry forever and the XOMachine finalizer would never be released. The guest
+// is not executing in those states, so a hard shutdown cannot lose in-flight
+// writes and makes the disks detachable.
+//
+// It is a no-op for Running and Halted VMs: a running VM must be detached
+// (unplugged) before being stopped, and a halted VM is already detachable.
+func StopVMIfNotDetachable(ctx context.Context, xoClient *xok8scommon.XoClient, vmID uuid.UUID) error {
+	logger := log.FromContext(ctx)
+
+	vm, err := xoClient.Client.VM().GetByID(ctx, vmID)
+	if err != nil {
+		if IsNotFoundError(err) {
+			logger.Info("VM not found, nothing to stop", "id", vmID.String())
+			return nil
+		}
+		return fmt.Errorf("failed to get VM %s power state: %w", vmID, err)
+	}
+	if vm == nil {
+		return nil
+	}
+
+	if vm.PowerState != payloads.PowerStatePaused && vm.PowerState != payloads.PowerStateSuspended {
+		return nil
+	}
+
+	logger.Info("VM is not in a detachable power state, stopping it before detaching persistent volumes",
+		"id", vmID.String(), "powerState", vm.PowerState)
+	return HardShutdownVM(ctx, xoClient, vmID)
+}
+
 func setCPUsIfNeeded(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, vm *payloads.VM, v1Concrete *xoclient.Client, v1Ok bool) {
 	logger := log.FromContext(ctx)
 	if xoMachine.Spec.ResourceSet == nil || xoMachine.Spec.ResourceSet.CPUs == nil || !v1Ok {

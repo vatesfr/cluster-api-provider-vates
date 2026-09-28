@@ -331,6 +331,15 @@ func (r *XOMachineReconciler) reconcileDelete(ctx context.Context, xoMachine *in
 			return ctrl.Result{}, r.removeFinalizer(ctx, xoMachine)
 		}
 
+		// A paused or suspended VM cannot release its disks (XCP-ng refuses the
+		// VBD removal with OPERATION_NOT_ALLOWED). Stop it first: the detach
+		// below would otherwise retry forever and the finalizer would never be
+		// released.
+		if err := xomachine.StopVMIfNotDetachable(ctx, xoClient, vmID); err != nil {
+			logger.Error(err, "Failed to stop a non-detachable VM before detaching persistent volumes, requeuing", "id", vmID.String())
+			return ctrl.Result{}, err
+		}
+
 		logger.Info("Detaching persistent volume disks before VM deletion", "id", vmID.String())
 		if err := xomachine.DetachPersistentVolumes(ctx, xoClient, vmID); err != nil {
 			logger.Error(err, "Failed to detach persistent volume disks, requeuing (VM deletion would destroy the PV data)", "id", vmID.String())
@@ -338,26 +347,8 @@ func (r *XOMachineReconciler) reconcileDelete(ctx context.Context, xoMachine *in
 		}
 
 		logger.Info("Stopping VM", "id", vmID.String())
-		taskID, hardErr := xoClient.Client.VM().HardShutdown(ctx, vmID)
-		if hardErr != nil {
-			if strings.Contains(hardErr.Error(), "unmarshal") {
-				if taskPath, extractErr := xomachine.ExtractBareTaskPath(hardErr); extractErr == nil && taskPath != "" {
-					logger.Info("HardShutdown issued via bare task, waiting", "id", vmID.String(), "task", taskPath)
-					if task, waitErr := xoClient.Client.Task().Wait(ctx, taskPath); waitErr != nil {
-						logger.Info("HardShutdown bare task wait failed, continuing cleanup", "id", vmID.String(), "task", taskPath, "error", waitErr)
-					} else if task.Status != payloads.Success {
-						logger.Info("HardShutdown bare task not successful, continuing cleanup", "id", vmID.String(), "task", taskPath, "status", task.Status)
-					}
-				} else {
-					logger.Info("HardShutdown bare task extraction failed, continuing cleanup", "id", vmID.String(), "error", hardErr)
-				}
-			} else {
-				logger.Info("HardShutdown failed or VM already stopped", "id", vmID.String(), "error", hardErr)
-			}
-		} else if task, waitErr := xoClient.Client.Task().Wait(ctx, taskID); waitErr != nil {
-			logger.Info("HardShutdown task wait failed, continuing cleanup", "id", vmID.String(), "task", taskID, "error", waitErr)
-		} else if task.Status != payloads.Success {
-			logger.Info("HardShutdown task not successful, continuing cleanup", "id", vmID.String(), "task", taskID, "status", task.Status)
+		if err := xomachine.HardShutdownVM(ctx, xoClient, vmID); err != nil {
+			logger.Info("HardShutdown did not complete, continuing cleanup", "id", vmID.String(), "error", err)
 		}
 
 		logger.Info("Deleting VM", "id", vmID.String())

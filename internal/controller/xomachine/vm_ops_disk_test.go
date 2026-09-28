@@ -208,3 +208,84 @@ var _ = Describe("DetachPersistentVolumes", func() {
 		Expect(DetachPersistentVolumes(context.Background(), xo, vmID)).To(HaveOccurred())
 	})
 })
+
+var _ = Describe("StopVMIfNotDetachable", func() {
+	var (
+		ctrl     *gomock.Controller
+		mockLib  *k8smocks.MockLibrary
+		mockVM   *k8smocks.MockVM
+		mockTask *MockTask
+		xo       *xok8scommon.XoClient
+		vmID     uuid.UUID
+	)
+
+	BeforeEach(func() {
+		ctrl = gomock.NewController(GinkgoT())
+		mockLib = k8smocks.NewMockLibrary(ctrl)
+		mockVM = k8smocks.NewMockVM(ctrl)
+		mockTask = NewMockTask(ctrl)
+		mockLib.EXPECT().VM().Return(mockVM).AnyTimes()
+		mockLib.EXPECT().Task().Return(mockTask).AnyTimes()
+		xo = &xok8scommon.XoClient{Client: mockLib}
+		vmID = uuid.Must(uuid.NewV4())
+	})
+
+	AfterEach(func() {
+		ctrl.Finish()
+	})
+
+	It("hard shuts down a paused VM", func() {
+		mockVM.EXPECT().GetByID(gomock.Any(), vmID).Return(&payloads.VM{ID: vmID, PowerState: payloads.PowerStatePaused}, nil)
+		mockVM.EXPECT().HardShutdown(gomock.Any(), vmID).Return("task-pause", nil)
+		mockTask.EXPECT().Wait(gomock.Any(), "task-pause").Return(&payloads.Task{Status: payloads.Success}, nil)
+
+		Expect(StopVMIfNotDetachable(context.Background(), xo, vmID)).To(Succeed())
+	})
+
+	It("hard shuts down a suspended VM", func() {
+		mockVM.EXPECT().GetByID(gomock.Any(), vmID).Return(&payloads.VM{ID: vmID, PowerState: payloads.PowerStateSuspended}, nil)
+		mockVM.EXPECT().HardShutdown(gomock.Any(), vmID).Return("task-suspend", nil)
+		mockTask.EXPECT().Wait(gomock.Any(), "task-suspend").Return(&payloads.Task{Status: payloads.Success}, nil)
+
+		Expect(StopVMIfNotDetachable(context.Background(), xo, vmID)).To(Succeed())
+	})
+
+	It("does not stop a running VM (its disks must be unplugged first)", func() {
+		mockVM.EXPECT().GetByID(gomock.Any(), vmID).Return(&payloads.VM{ID: vmID, PowerState: payloads.PowerStateRunning}, nil)
+
+		Expect(StopVMIfNotDetachable(context.Background(), xo, vmID)).To(Succeed())
+	})
+
+	It("does not stop an already halted VM", func() {
+		mockVM.EXPECT().GetByID(gomock.Any(), vmID).Return(&payloads.VM{ID: vmID, PowerState: payloads.PowerStateHalted}, nil)
+
+		Expect(StopVMIfNotDetachable(context.Background(), xo, vmID)).To(Succeed())
+	})
+
+	It("is a no-op when the VM is already gone (404)", func() {
+		mockVM.EXPECT().GetByID(gomock.Any(), vmID).Return(nil, fmt.Errorf("API error: 404 Not Found"))
+
+		Expect(StopVMIfNotDetachable(context.Background(), xo, vmID)).To(Succeed())
+	})
+
+	It("returns an error when the VM lookup fails transiently", func() {
+		mockVM.EXPECT().GetByID(gomock.Any(), vmID).Return(nil, fmt.Errorf("API error: 500 Internal Server Error"))
+
+		Expect(StopVMIfNotDetachable(context.Background(), xo, vmID)).To(HaveOccurred())
+	})
+
+	It("returns an error when the shutdown task fails", func() {
+		mockVM.EXPECT().GetByID(gomock.Any(), vmID).Return(&payloads.VM{ID: vmID, PowerState: payloads.PowerStatePaused}, nil)
+		mockVM.EXPECT().HardShutdown(gomock.Any(), vmID).Return("task-pause", nil)
+		mockTask.EXPECT().Wait(gomock.Any(), "task-pause").Return(&payloads.Task{Status: payloads.Failure}, nil)
+
+		Expect(StopVMIfNotDetachable(context.Background(), xo, vmID)).To(HaveOccurred())
+	})
+
+	It("returns an error when the shutdown call fails", func() {
+		mockVM.EXPECT().GetByID(gomock.Any(), vmID).Return(&payloads.VM{ID: vmID, PowerState: payloads.PowerStatePaused}, nil)
+		mockVM.EXPECT().HardShutdown(gomock.Any(), vmID).Return("", fmt.Errorf("API error: 500 Internal Server Error"))
+
+		Expect(StopVMIfNotDetachable(context.Background(), xo, vmID)).To(HaveOccurred())
+	})
+})
