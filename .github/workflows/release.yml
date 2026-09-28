@@ -1,0 +1,49 @@
+name: Release
+
+# Publishes the GitHub release for a tag: builds the clusterctl artifacts
+# (infrastructure-components.yaml, metadata.yaml, cluster-template.yaml) and
+# attaches them, with the notes generated from .github/release.yml.
+# The container image itself is built and pushed by the "Build and Push Image"
+# workflow, which also runs on tag pushes.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    name: Run on Ubuntu
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Generate the clusterctl release assets
+        run: make release-manifests IMG=ghcr.io/vatesfr/cluster-api-provider-vates:${GITHUB_REF_NAME}
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          flags=()
+          # Pre-release tags (v1.0.0-rc1, -beta1, -alpha1) are published as prereleases.
+          case "$TAG" in *-*) flags+=(--prerelease) ;; esac
+
+          gh release create "$TAG" "${flags[@]}" --verify-tag --generate-notes \
+            dist/infrastructure-components.yaml \
+            dist/metadata.yaml \
+            dist/cluster-template.yaml
