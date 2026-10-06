@@ -1,0 +1,29 @@
+diff --git a/dist/chart/templates/manager/manager.yaml b/dist/chart/templates/manager/manager.yaml
+index 13ff10b..5ff5c44 100644
+--- a/dist/chart/templates/manager/manager.yaml
++++ b/dist/chart/templates/manager/manager.yaml
+@@ -87,10 +87,13 @@ spec:
+         {{- range .Values.manager.args }}
+         - {{ . }}
+         {{- end }}
++        {{- range .Values.manager.extraArgs }}
++        - {{ . }}
++        {{- end }}
+         command:
+         - /manager
+         env:
+-{{- if or .Values.manager.env (and (kindIs "map" .Values.manager.envOverrides) (not (empty .Values.manager.envOverrides))) }}
++{{- if or .Values.manager.env (and (kindIs "map" .Values.manager.envOverrides) (not (empty .Values.manager.envOverrides))) .Values.manager.extraEnvs }}
+           {{- if .Values.manager.env }}
+           {{- toYaml .Values.manager.env | nindent 10 }}
+           {{- end }}
+@@ -100,6 +103,9 @@ spec:
+             value: {{ $v | quote }}
+           {{ end }}
+           {{- end }}
++          {{- if .Values.manager.extraEnvs }}
++          {{- toYaml .Values.manager.extraEnvs | nindent 10 }}
++          {{- end }}
+           {{- else }}
+           []
+           {{- end }}

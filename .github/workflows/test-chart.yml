@@ -51,6 +51,18 @@ jobs:
         run: |
           helm lint ./dist/chart
 
+      - name: Render chart with extra args/envs/volumes
+        run: |
+          helm template vates-capi ./dist/chart \
+            --set-json 'manager.extraArgs=["--kubeconfig=/etc/kubeconfig/config"]' \
+            --set-json 'manager.extraEnvs=[{"name":"KUBECONFIG","value":"/etc/kubeconfig/config"}]' \
+            --set-json 'manager.extraVolumes=[{"name":"kubeconfig","secret":{"secretName":"my-kubeconfig"}}]' \
+            --set-json 'manager.extraVolumeMounts=[{"name":"kubeconfig","mountPath":"/etc/kubeconfig","readOnly":true}]' \
+            > /tmp/rendered-chart.yaml
+          grep -q -- '--kubeconfig=/etc/kubeconfig/config' /tmp/rendered-chart.yaml
+          grep -q -- 'KUBECONFIG' /tmp/rendered-chart.yaml
+          grep -q -- 'my-kubeconfig' /tmp/rendered-chart.yaml
+
 # TODO: Uncomment if cert-manager is enabled
 #      - name: Install cert-manager via Helm (wait for readiness)
 #        run: |
@@ -85,3 +97,32 @@ jobs:
       - name: Check Helm release status
         run: |
           make helm-status
+
+  chart-up-to-date:
+    permissions:
+      contents: read
+    name: Chart is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install Helm
+        run: make install-helm
+
+      - name: Regenerate the Helm chart
+        run: make helm-update-chart
+
+      - name: Fail if the committed chart is stale
+        run: |
+          if ! git diff --exit-code -- dist/; then
+            echo "::error::dist/ is out of date. Run 'make helm-update-chart' and commit the result."
+            exit 1
+          fi

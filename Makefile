@@ -211,10 +211,12 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.8.1
 CONTROLLER_TOOLS_VERSION ?= v0.20.1
+KUBEBUILDER_VERSION ?= v4.14.0
 
 #ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell v='$(call gomodver,sigs.k8s.io/controller-runtime)'; \
@@ -231,6 +233,11 @@ GOLANGCI_LINT_VERSION ?= v2.11.4
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
 	$(call go-install-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v5,$(KUSTOMIZE_VERSION))
+
+.PHONY: kubebuilder
+kubebuilder: $(KUBEBUILDER) ## Download kubebuilder locally if necessary.
+$(KUBEBUILDER): $(LOCALBIN)
+	$(call go-install-tool,$(KUBEBUILDER),sigs.k8s.io/kubebuilder/v4,$(KUBEBUILDER_VERSION))
 
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
@@ -293,10 +300,20 @@ HELM_RELEASE ?= vates-capi
 HELM_CHART_DIR ?= dist/chart
 ## Additional arguments to pass to helm commands
 HELM_EXTRA_ARGS ?=
+## Patch re-applied to the regenerated chart (extraArgs/extraEnvs plumbing on the manager)
+HELM_CHART_EXTRAS_PATCH ?= hack/helm-chart-manager-extras.patch
 
 .PHONY: helm-update-chart
-helm-update-chart: ## Regenerate the Helm chart from kubebuilder manifests (via helm plugin). Use --force to overwrite customizations.
-	kubebuilder edit --plugins=helm/v2-alpha --force
+helm-update-chart: build-installer $(KUBEBUILDER) ## Regenerate the Helm chart from kustomize output, then re-apply the extraArgs/extraEnvs patch.
+	$(KUBEBUILDER) edit --plugins=helm/v2-alpha
+	@if git apply --reverse --check "$(HELM_CHART_EXTRAS_PATCH)" >/dev/null 2>&1; then \
+		echo "Helm chart extras already applied"; \
+	elif git apply --check "$(HELM_CHART_EXTRAS_PATCH)" >/dev/null 2>&1; then \
+		git apply "$(HELM_CHART_EXTRAS_PATCH)" && echo "Applied $(HELM_CHART_EXTRAS_PATCH)"; \
+	else \
+		echo "ERROR: $(HELM_CHART_EXTRAS_PATCH) does not apply cleanly; reconcile it with the regenerated chart" >&2; \
+		exit 1; \
+	fi
 
 .PHONY: install-helm
 install-helm: ## Install the latest version of Helm.
