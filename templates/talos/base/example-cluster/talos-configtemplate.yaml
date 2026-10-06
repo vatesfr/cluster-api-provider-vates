@@ -16,6 +16,11 @@ spec:
               servers:
                 - time.cloudflare.com
                 - pool.ntp.org
-            kubelet:
-              extraArgs:
-                cloud-provider: external
+        # kubelet is a standalone document since Talos 1.12: patching
+        # machine.kubelet here makes the whole config invalid
+        # ("kubelet config is already set in v1alpha1 config").
+        - |
+          apiVersion: v1alpha1
+          kind: KubeletConfig
+          extraArgs:
+            cloud-provider: external
