@@ -115,15 +115,20 @@ spec:
               servers:
                 - time.cloudflare.com
                 - pool.ntp.org
-            kubelet:
-              extraArgs:
-                cloud-provider: external
             network:
               interfaces:
                 - interface: eth0
                   dhcp: true
                   vip:
                     ip: ${CP_VIP}
+        # kubelet is a standalone document since Talos 1.12: patching
+        # machine.kubelet here makes the whole config invalid
+        # ("kubelet config is already set in v1alpha1 config").
+        - |
+          apiVersion: v1alpha1
+          kind: KubeletConfig
+          extraArgs:
+            cloud-provider: external
 ---
 apiVersion: bootstrap.cluster.x-k8s.io/v1alpha3
 kind: TalosConfigTemplate
@@ -141,9 +146,14 @@ spec:
               servers:
                 - time.cloudflare.com
                 - pool.ntp.org
-            kubelet:
-              extraArgs:
-                cloud-provider: external
+        # kubelet is a standalone document since Talos 1.12: patching
+        # machine.kubelet here makes the whole config invalid
+        # ("kubelet config is already set in v1alpha1 config").
+        - |
+          apiVersion: v1alpha1
+          kind: KubeletConfig
+          extraArgs:
+            cloud-provider: external
 ---
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: MachineDeployment
