@@ -87,10 +87,13 @@ spec:
         {{- range .Values.manager.args }}
         - {{ . }}
         {{- end }}
+        {{- range .Values.manager.extraArgs }}
+        - {{ . }}
+        {{- end }}
         command:
         - /manager
         env:
-{{- if or .Values.manager.env (and (kindIs "map" .Values.manager.envOverrides) (not (empty .Values.manager.envOverrides))) }}
+{{- if or .Values.manager.env (and (kindIs "map" .Values.manager.envOverrides) (not (empty .Values.manager.envOverrides))) .Values.manager.extraEnvs }}
           {{- if .Values.manager.env }}
           {{- toYaml .Values.manager.env | nindent 10 }}
           {{- end }}
@@ -99,6 +102,9 @@ spec:
           - name: {{ $k }}
             value: {{ $v | quote }}
           {{ end }}
+          {{- end }}
+          {{- if .Values.manager.extraEnvs }}
+          {{- toYaml .Values.manager.extraEnvs | nindent 10 }}
           {{- end }}
           {{- else }}
           []

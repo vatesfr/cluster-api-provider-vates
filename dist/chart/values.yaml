@@ -39,6 +39,24 @@ manager:
   ##
   envOverrides: {}
 
+  ## Extra arguments appended to the manager container args.
+  ## Unlike manager.args, these do not replace the defaults.
+  ##
+  extraArgs: []
+
+  ## Extra environment variables appended to the manager container env.
+  ## Each item is a core/v1 EnvVar: {name, value} or {name, valueFrom}.
+  ##
+  extraEnvs: []
+
+  ## Extra volume mounts added to the manager container.
+  ##
+  extraVolumeMounts: []
+
+  ## Extra volumes added to the manager Pod.
+  ##
+  extraVolumes: []
+
   ## Image pull secrets
   ##
   # imagePullSecrets:
