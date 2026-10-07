@@ -4,18 +4,18 @@
 #   CP_LB               - Load balancer type: "kube-vip" or "" (empty = no LB)
 #   CP_SUBNET           - CIDR subnet mask for the VIP (e.g. 16, 24)
 #   VM_NAME_PREFIX      - Prefix for VM names (e.g. my-cluster)
-#   KUBERNETES_VERSION  - Kubernetes version (e.g. v1.36.1)
 #   XO_TEMPLATE_UUID    - UUID of the AlmaLinux/RHEL VM template (almalinux-fromscratch)
 #   XO_POOL_UUID        - UUID of your Xen Orchestra pool
 #   XO_NETWORK_UUID     - UUID of your Xen Orchestra network
 #   XO_CNI              - CNI installed by the provider via ClusterResourceSet
 #                         (default: cilium; set to "none" to install manually)
 #
-# Optional variables (clusterctl built-in defaults — not the base/ replicas):
+# Clusterctl built-in variables (set via flags or env):
+#   KUBERNETES_VERSION          - Kubernetes version (via --kubernetes-version or env)
 #   CLUSTER_NAME                - Cluster name (default: name argument)
 #   NAMESPACE                   - Target namespace (default: current namespace)
-#   CONTROL_PLANE_MACHINE_COUNT - Control plane replicas (default: 1)
-#   WORKER_MACHINE_COUNT        - Worker replicas (default: 0)
+#   CONTROL_PLANE_MACHINE_COUNT - Control plane replicas (--control-plane-machine-count)
+#   WORKER_MACHINE_COUNT        - Worker replicas (--worker-machine-count)
 ---
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: Cluster
@@ -53,7 +53,7 @@ spec:
     port: ${CP_PORT}
     subnet: ${CP_SUBNET}
   controlPlaneLB: ${CP_LB}
-  injectSSHKeys: true
+  injectSSHKeys: false
   addons:
     cni: ${XO_CNI:-cilium}
 ---
@@ -65,6 +65,10 @@ metadata:
 spec:
   template:
     spec:
+      bootstrapProvider: kubeadm
+      bootstrap:
+        cloudInit: true
+        kubeVIP: true
       namePrefix: ${VM_NAME_PREFIX}-cp
       templateID: ${XO_TEMPLATE_UUID}
       poolID: ${XO_POOL_UUID}
@@ -84,6 +88,10 @@ metadata:
 spec:
   template:
     spec:
+      bootstrapProvider: kubeadm
+      bootstrap:
+        cloudInit: true
+        kubeVIP: true
       namePrefix: ${VM_NAME_PREFIX}-worker
       templateID: ${XO_TEMPLATE_UUID}
       poolID: ${XO_POOL_UUID}
@@ -145,11 +153,12 @@ spec:
       - swapoff -a; sed -i '/ swap /d' /etc/fstab 2>/dev/null; true
       - dnf install -y epel-release
       - |
-        for f in /run/kubeadm/kubeadm.yaml /run/kubeadm/kubeadm-join-config.yaml; do
-          [ -f "$f" ] && FULL=$(grep 'kubernetesVersion:' "$f" | awk '{print $2}') && break
-        done
-        [ -z "$FULL" ] && FULL="v1.36.0"
+        FULL="${KUBERNETES_VERSION}"
         MINOR=$(echo "$FULL" | sed 's/\(v[0-9]*\.[0-9]*\).*/\1/')
+        # Pin the exact requested version so KCP does not consider the node
+        # out-of-date (and roll it forever) when the repo would install a
+        # newer patch release.
+        echo "$FULL" > /etc/kubernetes-version
         cat <<EOF > /etc/yum.repos.d/kubernetes.repo
         [kubernetes]
         name=Kubernetes
@@ -158,7 +167,9 @@ spec:
         gpgcheck=1
         gpgkey=https://pkgs.k8s.io/core:/stable:/$MINOR/rpm/repodata/repomd.xml.key
         EOF
-      - dnf install -y --disableexcludes=kubernetes --setopt=install_weak_deps=False containerd runc kubelet kubeadm kubectl
+      - |
+        VERSION=$(sed 's/^v//' /etc/kubernetes-version)
+        dnf install -y --disableexcludes=kubernetes --setopt=install_weak_deps=False containerd runc "kubelet-$VERSION" "kubeadm-$VERSION" "kubectl-$VERSION"
       - |
         containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/' | tee /etc/containerd/config.toml
         sed -i "s|config_path = ''|config_path = '/etc/containerd/certs.d'|" /etc/containerd/config.toml
@@ -187,11 +198,12 @@ spec:
         - swapoff -a; sed -i '/ swap /d' /etc/fstab 2>/dev/null; true
         - dnf install -y epel-release
         - |
-          for f in /run/kubeadm/kubeadm.yaml /run/kubeadm/kubeadm-join-config.yaml; do
-            [ -f "$f" ] && FULL=$(grep 'kubernetesVersion:' "$f" | awk '{print $2}') && break
-          done
-          [ -z "$FULL" ] && FULL="v1.36.0"
+          FULL="${KUBERNETES_VERSION}"
           MINOR=$(echo "$FULL" | sed 's/\(v[0-9]*\.[0-9]*\).*/\1/')
+          # Pin the exact requested version so KCP does not consider the node
+          # out-of-date (and roll it forever) when the repo would install a
+          # newer patch release.
+          echo "$FULL" > /etc/kubernetes-version
           cat <<EOF > /etc/yum.repos.d/kubernetes.repo
           [kubernetes]
           name=Kubernetes
@@ -200,7 +212,9 @@ spec:
           gpgcheck=1
           gpgkey=https://pkgs.k8s.io/core:/stable:/$MINOR/rpm/repodata/repomd.xml.key
           EOF
-        - dnf install -y --disableexcludes=kubernetes --setopt=install_weak_deps=False containerd runc kubelet kubeadm
+        - |
+          VERSION=$(sed 's/^v//' /etc/kubernetes-version)
+          dnf install -y --disableexcludes=kubernetes --setopt=install_weak_deps=False containerd runc "kubelet-$VERSION" "kubeadm-$VERSION"
         - |
           containerd config default | sed 's/SystemdCgroup = false/SystemdCgroup = true/' | tee /etc/containerd/config.toml
           sed -i "s|config_path = ''|config_path = '/etc/containerd/certs.d'|" /etc/containerd/config.toml

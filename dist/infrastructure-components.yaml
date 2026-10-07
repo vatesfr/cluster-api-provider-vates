@@ -11,8 +11,8 @@ metadata:
     controller-gen.kubebuilder.io/version: v0.20.1
   labels:
     cluster.x-k8s.io/provider: infrastructure-vates
-    cluster.x-k8s.io/v1beta1: v1beta2
     cluster.x-k8s.io/v1beta2: v1beta2
+    clusterctl.cluster.x-k8s.io: ""
   name: xoclusters.vates.infrastructure.cluster.x-k8s.io
 spec:
   group: vates.infrastructure.cluster.x-k8s.io
@@ -88,6 +88,31 @@ spec:
                     description: CSI installs the Xen Orchestra CSI driver. Defaults
                       to true.
                     type: boolean
+                  nodeOutOfService:
+                    description: |-
+                      NodeOutOfService configures the CCM cloud-node-out-of-service controller
+                      (Non-Graceful Node Shutdown). When enabled, the CCM applies the
+                      node.kubernetes.io/out-of-service taint to nodes whose Xen Orchestra VM is
+                      no longer running, so kube-controller-manager can force-detach their
+                      volumes instead of waiting for its 6 minute maxWaitForUnmountDuration
+                      timer. When nil, the controller is enabled with the CCM defaults.
+                    properties:
+                      enabled:
+                        default: true
+                        description: Enabled toggles the out-of-service taint controller.
+                          Defaults to true.
+                        type: boolean
+                      gracePeriod:
+                        description: |-
+                          GracePeriod overrides how long a powered-off VM must stay down while its
+                          node is NotReady before the out-of-service taint is applied. A VM deleted
+                          from Xen Orchestra is tainted immediately.
+                        type: string
+                      syncPeriod:
+                        description: SyncPeriod overrides how often the controller
+                          reconciles the nodes.
+                        type: string
+                    type: object
                 type: object
               controlPlaneEndpoint:
                 description: ControlPlaneEndpoint is the endpoint for the control
@@ -276,8 +301,8 @@ metadata:
     controller-gen.kubebuilder.io/version: v0.20.1
   labels:
     cluster.x-k8s.io/provider: infrastructure-vates
-    cluster.x-k8s.io/v1beta1: v1beta2
     cluster.x-k8s.io/v1beta2: v1beta2
+    clusterctl.cluster.x-k8s.io: ""
   name: xoclustertemplates.vates.infrastructure.cluster.x-k8s.io
 spec:
   group: vates.infrastructure.cluster.x-k8s.io
@@ -349,6 +374,31 @@ spec:
                             description: CSI installs the Xen Orchestra CSI driver.
                               Defaults to true.
                             type: boolean
+                          nodeOutOfService:
+                            description: |-
+                              NodeOutOfService configures the CCM cloud-node-out-of-service controller
+                              (Non-Graceful Node Shutdown). When enabled, the CCM applies the
+                              node.kubernetes.io/out-of-service taint to nodes whose Xen Orchestra VM is
+                              no longer running, so kube-controller-manager can force-detach their
+                              volumes instead of waiting for its 6 minute maxWaitForUnmountDuration
+                              timer. When nil, the controller is enabled with the CCM defaults.
+                            properties:
+                              enabled:
+                                default: true
+                                description: Enabled toggles the out-of-service taint
+                                  controller. Defaults to true.
+                                type: boolean
+                              gracePeriod:
+                                description: |-
+                                  GracePeriod overrides how long a powered-off VM must stay down while its
+                                  node is NotReady before the out-of-service taint is applied. A VM deleted
+                                  from Xen Orchestra is tainted immediately.
+                                type: string
+                              syncPeriod:
+                                description: SyncPeriod overrides how often the controller
+                                  reconciles the nodes.
+                                type: string
+                            type: object
                         type: object
                       controlPlaneEndpoint:
                         description: ControlPlaneEndpoint is the endpoint for the
@@ -434,8 +484,8 @@ metadata:
     controller-gen.kubebuilder.io/version: v0.20.1
   labels:
     cluster.x-k8s.io/provider: infrastructure-vates
-    cluster.x-k8s.io/v1beta1: v1beta2
     cluster.x-k8s.io/v1beta2: v1beta2
+    clusterctl.cluster.x-k8s.io: ""
   name: xomachines.vates.infrastructure.cluster.x-k8s.io
 spec:
   group: vates.infrastructure.cluster.x-k8s.io
@@ -488,21 +538,36 @@ spec:
             description: XOMachineSpec defines the desired state of a Xen Orchestra
               VM.
             properties:
+              bootstrap:
+                description: |-
+                  Bootstrap declares how the bootstrap payload from the owner Machine must
+                  be handled by the infrastructure provider. It describes what to do, never
+                  who produced the payload, so adding a bootstrap provider needs no change
+                  to this controller. When unset, the payload is passed through untouched.
+                properties:
+                  cloudInit:
+                    description: |-
+                      CloudInit reports that the payload is a cloud-init document, which may be
+                      enriched: the SSH keys of the XO user profile are merged in.
+                    type: boolean
+                  kubeVIP:
+                    description: |-
+                      KubeVIP reports that kube-vip may be injected into the payload. It only
+                      applies to a kubeadm-style cloud-init control plane, so it is ignored
+                      unless CloudInit is true.
+                    type: boolean
+                type: object
               bootstrapData:
                 description: |-
-                  BootstrapData is the bootstrap data (cloud-init) to inject into the VM.
+                  BootstrapData is the bootstrap data to inject into the VM.
                   If empty, the controller will try to read it from the owner Machine's bootstrap secret.
                 type: string
               bootstrapProvider:
-                default: kubeadm
                 description: |-
-                  BootstrapProvider selects the bootstrap provider for this machine.
-                  Supported values: "kubeadm" (default), "talos".
-                  When "talos", the controller passes bootstrap data directly to XO
-                  without cloud-init transformation, SSH key injection, or kube-vip.
-                enum:
-                - kubeadm
-                - talos
+                  BootstrapProvider identifies the bootstrap provider for observability
+                  only: it is applied as the "bootstrap:<name>" tag on the VM. It does not
+                  change how the payload is handled -- declare Bootstrap for that.
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                 type: string
               failureDomain:
                 description: FailureDomain is the failure domain unique identifier
@@ -731,8 +796,8 @@ metadata:
     controller-gen.kubebuilder.io/version: v0.20.1
   labels:
     cluster.x-k8s.io/provider: infrastructure-vates
-    cluster.x-k8s.io/v1beta1: v1beta2
     cluster.x-k8s.io/v1beta2: v1beta2
+    clusterctl.cluster.x-k8s.io: ""
   name: xomachinetemplates.vates.infrastructure.cluster.x-k8s.io
 spec:
   group: vates.infrastructure.cluster.x-k8s.io
@@ -778,21 +843,36 @@ spec:
                     description: Spec is the specification of the desired behavior
                       of the machine.
                     properties:
+                      bootstrap:
+                        description: |-
+                          Bootstrap declares how the bootstrap payload from the owner Machine must
+                          be handled by the infrastructure provider. It describes what to do, never
+                          who produced the payload, so adding a bootstrap provider needs no change
+                          to this controller. When unset, the payload is passed through untouched.
+                        properties:
+                          cloudInit:
+                            description: |-
+                              CloudInit reports that the payload is a cloud-init document, which may be
+                              enriched: the SSH keys of the XO user profile are merged in.
+                            type: boolean
+                          kubeVIP:
+                            description: |-
+                              KubeVIP reports that kube-vip may be injected into the payload. It only
+                              applies to a kubeadm-style cloud-init control plane, so it is ignored
+                              unless CloudInit is true.
+                            type: boolean
+                        type: object
                       bootstrapData:
                         description: |-
-                          BootstrapData is the bootstrap data (cloud-init) to inject into the VM.
+                          BootstrapData is the bootstrap data to inject into the VM.
                           If empty, the controller will try to read it from the owner Machine's bootstrap secret.
                         type: string
                       bootstrapProvider:
-                        default: kubeadm
                         description: |-
-                          BootstrapProvider selects the bootstrap provider for this machine.
-                          Supported values: "kubeadm" (default), "talos".
-                          When "talos", the controller passes bootstrap data directly to XO
-                          without cloud-init transformation, SSH key injection, or kube-vip.
-                        enum:
-                        - kubeadm
-                        - talos
+                          BootstrapProvider identifies the bootstrap provider for observability
+                          only: it is applied as the "bootstrap:<name>" tag on the VM. It does not
+                          change how the payload is handled -- declare Bootstrap for that.
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                       failureDomain:
                         description: FailureDomain is the failure domain unique identifier
