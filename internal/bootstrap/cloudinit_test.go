@@ -58,7 +58,7 @@ var _ = Describe("MergeSSHKeysIntoCloudConfig", func() {
 	})
 })
 
-var _ = Describe("BuildKubeadmCloudConfig", func() {
+var _ = Describe("BuildCloudInitWithSSHKeys", func() {
 	var (
 		ctrl    *gomock.Controller
 		mockV1  *MockXOClient
@@ -77,7 +77,7 @@ var _ = Describe("BuildKubeadmCloudConfig", func() {
 	})
 
 	It("returns bootstrap data as-is when injectSSHKeys is false", func() {
-		out, err := BuildKubeadmCloudConfig(context.Background(),
+		out, err := BuildCloudInitWithSSHKeys(context.Background(),
 			&xok8scommon.XoClient{Client: mockLib},
 			[]byte("#cloud-config\noriginal-data\n"), false)
 		Expect(err).NotTo(HaveOccurred())
@@ -85,7 +85,7 @@ var _ = Describe("BuildKubeadmCloudConfig", func() {
 	})
 
 	It("returns empty string when injectSSHKeys is false and no bootstrap data", func() {
-		out, err := BuildKubeadmCloudConfig(context.Background(),
+		out, err := BuildCloudInitWithSSHKeys(context.Background(),
 			&xok8scommon.XoClient{Client: mockLib},
 			nil, false)
 		Expect(err).NotTo(HaveOccurred())
@@ -101,7 +101,7 @@ var _ = Describe("BuildKubeadmCloudConfig", func() {
 				},
 			}, nil)
 
-		out, err := BuildKubeadmCloudConfig(context.Background(),
+		out, err := BuildCloudInitWithSSHKeys(context.Background(),
 			&xok8scommon.XoClient{Client: mockLib},
 			[]byte("#cloud-config\n"), true)
 		Expect(err).NotTo(HaveOccurred())
@@ -117,7 +117,7 @@ var _ = Describe("BuildKubeadmCloudConfig", func() {
 				},
 			}, nil)
 
-		out, err := BuildKubeadmCloudConfig(context.Background(),
+		out, err := BuildCloudInitWithSSHKeys(context.Background(),
 			&xok8scommon.XoClient{Client: mockLib},
 			nil, true)
 		Expect(err).NotTo(HaveOccurred())
@@ -129,7 +129,7 @@ var _ = Describe("BuildKubeadmCloudConfig", func() {
 		mockLib2 := k8smocks.NewMockLibrary(ctrl)
 		mockLib2.EXPECT().V1Client().Return(nil)
 
-		_, err := BuildKubeadmCloudConfig(context.Background(),
+		_, err := BuildCloudInitWithSSHKeys(context.Background(),
 			&xok8scommon.XoClient{Client: mockLib2},
 			nil, true)
 		Expect(err).To(HaveOccurred())

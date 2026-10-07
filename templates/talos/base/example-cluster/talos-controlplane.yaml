@@ -19,13 +19,16 @@ spec:
   controlPlaneConfig:
     controlplane:
       generateType: controlplane
+      # Must match the Talos version of the image; CABPT's default may differ
+      # and the node then rejects the generated config.
+      talosVersion: <your-talos-version>   # e.g. v1.13.9
       strategicPatches:
         - |
           machine:
             time:
               servers:
                 - time.cloudflare.com
-                - pool.ntp.org
+                - time.google.com
             kubelet:
               extraArgs:
                 cloud-provider: external

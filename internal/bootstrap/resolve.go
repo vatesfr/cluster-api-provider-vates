@@ -16,13 +16,15 @@ import (
 
 // ResolveBootstrapDataResult holds the result of resolving bootstrap data.
 type ResolveBootstrapDataResult struct {
-	Machine           *clusterv1.Machine
-	Data              []byte
-	Requeue           bool
-	BootstrapProvider string
+	Machine *clusterv1.Machine
+	Data    []byte
+	Requeue bool
 }
 
 // ResolveBootstrapData gets the owner Machine and the associated bootstrap data.
+// It never interprets the payload: the caller decides what to do with it from
+// the XOMachine's declared Behavior.
+//
 // Returns:
 //   - (result with machine and data) when data is available
 //   - (result with Requeue=true) when bootstrap is not yet ready
@@ -46,44 +48,16 @@ func ResolveBootstrapData(ctx context.Context, c client.Client, xoMachine *infra
 			logger.Error(err, "Failed to get bootstrap data")
 			return ResolveBootstrapDataResult{}, err
 		}
-		return ResolveBootstrapDataResult{
-			Machine:           machine,
-			Data:              data,
-			BootstrapProvider: DetectBootstrapProvider(xoMachine.Spec, machine),
-		}, nil
+		return ResolveBootstrapDataResult{Machine: machine, Data: data}, nil
 	}
 
 	if xoMachine.Spec.BootstrapData != "" {
 		logger.Info("Using inline bootstrap data from spec")
-		return ResolveBootstrapDataResult{
-			Data:              []byte(xoMachine.Spec.BootstrapData),
-			BootstrapProvider: DetectBootstrapProvider(xoMachine.Spec, nil),
-		}, nil
+		return ResolveBootstrapDataResult{Data: []byte(xoMachine.Spec.BootstrapData)}, nil
 	}
 
 	logger.Info("No owner Machine yet and no inline bootstrap data, requeuing")
-	return ResolveBootstrapDataResult{
-		Requeue:           true,
-		BootstrapProvider: DetectBootstrapProvider(xoMachine.Spec, nil),
-	}, nil
-}
-
-// DetectBootstrapProvider returns the effective bootstrap provider for a machine.
-// Priority:
-// 1. Explicit spec.BootstrapProvider
-// 2. Auto-detect from the owner Machine's bootstrap configRef (TalosConfig/TalosConfigTemplate = talos)
-// 3. Default "kubeadm"
-func DetectBootstrapProvider(spec infrastructurev1beta2.XOMachineSpec, machine *clusterv1.Machine) string {
-	if spec.BootstrapProvider != "" {
-		return spec.BootstrapProvider
-	}
-	if machine != nil && machine.Spec.Bootstrap.ConfigRef.Name != "" {
-		kind := machine.Spec.Bootstrap.ConfigRef.Kind
-		if kind == "TalosConfig" || kind == "TalosConfigTemplate" {
-			return talosProviderName
-		}
-	}
-	return KubeadmProviderName
+	return ResolveBootstrapDataResult{Requeue: true}, nil
 }
 
 // GetBootstrapData reads the bootstrap data secret referenced by the Machine.

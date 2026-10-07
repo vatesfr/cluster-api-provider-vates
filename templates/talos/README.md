@@ -232,13 +232,14 @@ metadata:
 spec:
   controlPlaneConfig:
     controlplane:
+      talosVersion: <your-talos-version>   # e.g. v1.13.9 — must match the image
       strategicPatches:
         - |
           machine:
             time:
               servers:
                 - time.cloudflare.com
-                - pool.ntp.org
+                - time.google.com
             kubelet:
               extraArgs:
                 cloud-provider: external
@@ -280,6 +281,7 @@ overlay:
 export CP_VIP=<your-cp-vip>
 export CP_SUBNET=<your-subnet-cidr-bits>
 export VM_NAME_PREFIX=<your-vm-name-prefix>
+export TALOS_VERSION=<your-talos-version>   # e.g. v1.13.9 — must match the image
 export XO_TEMPLATE_UUID=<your-xo-talos-template-uuid>
 export XO_POOL_UUID=<your-xo-pool-uuid>
 export XO_NETWORK_UUID=<your-xo-network-uuid>
@@ -342,9 +344,14 @@ The base templates apply the following `strategicPatches`:
 
 | Patch | Purpose |
 |---|---|
-| `machine.time.servers` | Use `time.cloudflare.com` / `pool.ntp.org` instead of the default NTP server, which may answer "kiss of death" on some networks |
+| `machine.time.servers` | Use `time.cloudflare.com` / `time.google.com` instead of the default NTP server; some servers (e.g. `pool.ntp.org`) answer "kiss of death" on some networks |
 | `machine.network.interfaces[].vip` | Talos native shared IP (control plane VIP) — **not** kube-vip |
 | `machine.kubelet.extraArgs.cloud-provider: external` | Offload node initialization to the Xen Orchestra CCM, which sets the `providerID` required by CAPI |
+
+> `TalosControlPlane.spec.controlPlaneConfig.controlplane.talosVersion` **must**
+> be set to the Talos version of the image. Without it, CABPT generates a config
+> for its own default version, which the node rejects (unknown documents), and
+> the machine stays in maintenance.
 
 ## Cloud Controller Manager
 

@@ -88,33 +88,3 @@ var _ = Describe("ResolveBootstrapData", func() {
 		Expect(result.Requeue).To(BeTrue())
 	})
 })
-
-var _ = Describe("DetectBootstrapProvider", func() {
-	It("returns explicit value when set", func() {
-		spec := infrastructurev1beta2.XOMachineSpec{BootstrapProvider: "talos"}
-		result := DetectBootstrapProvider(spec, nil)
-		Expect(result).To(Equal("talos"))
-	})
-
-	It("returns kubeadm by default when empty", func() {
-		spec := infrastructurev1beta2.XOMachineSpec{}
-		result := DetectBootstrapProvider(spec, nil)
-		Expect(result).To(Equal("kubeadm"))
-	})
-
-	It("detects talos from the owner Machine configRef", func() {
-		spec := infrastructurev1beta2.XOMachineSpec{}
-		machine := &clusterv1.Machine{
-			Spec: clusterv1.MachineSpec{
-				Bootstrap: clusterv1.Bootstrap{
-					ConfigRef: clusterv1.ContractVersionedObjectReference{
-						Kind: "TalosConfig",
-						Name: "my-talos-config",
-					},
-				},
-			},
-		}
-		result := DetectBootstrapProvider(spec, machine)
-		Expect(result).To(Equal("talos"))
-	})
-})

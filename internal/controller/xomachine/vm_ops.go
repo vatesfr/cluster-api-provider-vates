@@ -102,22 +102,25 @@ func SetVMTags(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, 
 	logger.Info("Set VM tags", "id", vmID.String(), "tags", tags)
 }
 
-// vmTags builds the identifying tags for a VM: it is always tagged with
-// "vates-capi" (managed by this provider) plus a mandatory "bootstrap:<name>"
-// tag derived from the bootstrap provider name, so any new bootstrap provider
-// is tagged automatically once it implements the Provider interface.
+// vmTags builds the identifying tags for a VM. It is always tagged with
+// "vates-capi" (managed by this provider); the "bootstrap:<name>" tag is added
+// only when the XOMachine declares a bootstrap provider name. The name is
+// purely informational: it never drives behavior.
 func vmTags(xoMachine *infrastructurev1beta2.XOMachine, providerName string) []string {
 	role := "worker"
 	if _, ok := xoMachine.Labels[clusterv1.MachineControlPlaneLabel]; ok {
 		role = "control-plane"
 	}
-	return []string{
+	tags := []string{
 		"vates-capi",
-		"bootstrap:" + providerName,
 		"cluster-name:" + xoMachine.Labels[clusterv1.ClusterNameLabel],
 		"machine:" + xoMachine.Name,
 		"role:" + role,
 	}
+	if providerName != "" {
+		tags = append(tags, "bootstrap:"+providerName)
+	}
+	return tags
 }
 
 func buildCreateParams(templateID uuid.UUID, vmName string, cloudConfig string, networkConfig *string) *payloads.CreateVMParams {

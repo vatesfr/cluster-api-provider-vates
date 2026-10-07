@@ -18,52 +18,11 @@ import (
 	"github.com/vatesfr/cluster-api-provider-vates/internal/kubevip"
 )
 
-// KubeadmProviderName is the kubeadm bootstrap provider name (the default).
-const KubeadmProviderName = "kubeadm"
-
-type kubeadmProvider struct{}
-
-func (kubeadmProvider) Name() string {
-	return KubeadmProviderName
-}
-
-func (kubeadmProvider) BuildCloudConfig(ctx context.Context, deps Dependencies) (string, error) {
-	injectSSHKeys := resolveInjectSSHKeys(ctx, deps.Client, deps.Machine, deps.XOMachine)
-	cloudConfig, err := BuildKubeadmCloudConfig(ctx, deps.XOClient, deps.BootstrapData, injectSSHKeys)
-	if err != nil {
-		return "", err
-	}
-
-	cloudConfig, err = injectKubeVIPIfNeeded(ctx, deps.Client, cloudConfig, deps.Machine, deps.XOMachine)
-	if err != nil {
-		return "", err
-	}
-	return cloudConfig, nil
-}
-
-func (kubeadmProvider) NetworkConfig(deps Dependencies) *string {
-	guestConfig := ""
-	if deps.XOMachine.Spec.NetworkConfig != nil {
-		guestConfig = deps.XOMachine.Spec.NetworkConfig.GuestConfig
-	}
-	return BuildKubeadmNetworkConfig(guestConfig)
-}
-
-// BuildKubeadmNetworkConfig returns the network-config for a kubeadm VM.
-// kubeadm uses cloud-init, so the network config is the user-provided guest
-// config (netplan) when present, otherwise nil (no config drive network file).
-func BuildKubeadmNetworkConfig(guestConfig string) *string {
-	if guestConfig != "" {
-		return &guestConfig
-	}
-	return nil
-}
-
-// BuildKubeadmCloudConfig optionally injects SSH keys from the XO user profile
+// BuildCloudInitWithSSHKeys optionally injects SSH keys from the XO user profile
 // into the bootstrap data. If injectSSHKeys is false, the bootstrap data
 // is returned as-is. If no bootstrap data is provided and injection is
 // enabled, a minimal cloud-config with only SSH authorized keys is generated.
-func BuildKubeadmCloudConfig(ctx context.Context, xoClient *xok8scommon.XoClient, bootstrapData []byte, injectSSHKeys bool) (string, error) {
+func BuildCloudInitWithSSHKeys(ctx context.Context, xoClient *xok8scommon.XoClient, bootstrapData []byte, injectSSHKeys bool) (string, error) {
 	if !injectSSHKeys {
 		if len(bootstrapData) > 0 {
 			return string(bootstrapData), nil
@@ -197,7 +156,7 @@ func resolveInjectSSHKeys(ctx context.Context, c client.Client, machine *cluster
 
 // InjectKubeVIP injects kube-vip scripts into the cloud-init for a control plane
 // node. The caller is responsible for checking that kube-vip is enabled on the
-// VatesCluster before calling this function.
+// XOCluster before calling this function.
 func InjectKubeVIP(ctx context.Context, c client.Client, xoMachine *infrastructurev1beta2.XOMachine, machine *clusterv1.Machine, xoCluster *infrastructurev1beta2.XOCluster, cloudConfig string) (string, error) {
 	logger := log.FromContext(ctx)
 

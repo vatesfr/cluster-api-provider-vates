@@ -258,7 +258,7 @@ var _ = Describe("Reconcile", func() {
 			Expect(*updated.Status.ProviderID).NotTo(BeEmpty())
 		})
 
-		It("creates the VM with Talos bootstrap data passthrough", func() {
+		It("creates the VM with a declared passthrough behavior and a config drive placeholder", func() {
 			vmUUID := uuid.Must(uuid.NewV4())
 			poolUUID := uuid.Must(uuid.NewV4())
 			templateUUID := uuid.Must(uuid.NewV4())
@@ -285,12 +285,15 @@ var _ = Describe("Reconcile", func() {
 				},
 			}
 
-			// GetCurrentUser should NOT be called for Talos (no SSH key injection, no cloud-config build)
+			// No declared behavior: the payload is passed through untouched and
+			// no network config is written (Xen Orchestra still creates the
+			// config drive from the cloud config alone).
 			mockVM.EXPECT().
 				Create(gomock.Any(), poolUUID, gomock.Any()).
 				DoAndReturn(func(_ context.Context, _ uuid.UUID, params *payloads.CreateVMParams) (*payloads.VM, error) {
 					Expect(params.CloudConfig).NotTo(BeNil())
 					Expect(*params.CloudConfig).To(Equal(talosData))
+					Expect(params.NetworkConfig).To(BeNil())
 					return &payloads.VM{
 						ID:         vmUUID,
 						NameLabel:  "test",

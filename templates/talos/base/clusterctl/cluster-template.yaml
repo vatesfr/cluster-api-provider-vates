@@ -108,13 +108,14 @@ spec:
   controlPlaneConfig:
     controlplane:
       generateType: controlplane
+      talosVersion: ${TALOS_VERSION}
       strategicPatches:
         - |
           machine:
             time:
               servers:
                 - time.cloudflare.com
-                - pool.ntp.org
+                - time.google.com
             kubelet:
               extraArgs:
                 cloud-provider: external
@@ -140,7 +141,7 @@ spec:
             time:
               servers:
                 - time.cloudflare.com
-                - pool.ntp.org
+                - time.google.com
             kubelet:
               extraArgs:
                 cloud-provider: external
