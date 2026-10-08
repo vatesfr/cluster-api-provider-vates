@@ -65,6 +65,10 @@ metadata:
 spec:
   template:
     spec:
+      bootstrapProvider: kubeadm
+      bootstrap:
+        cloudInit: true
+        kubeVIP: true
       namePrefix: ${VM_NAME_PREFIX}-cp
       templateID: ${XO_TEMPLATE_UUID}
       poolID: ${XO_POOL_UUID}
@@ -84,6 +88,10 @@ metadata:
 spec:
   template:
     spec:
+      bootstrapProvider: kubeadm
+      bootstrap:
+        cloudInit: true
+        kubeVIP: true
       namePrefix: ${VM_NAME_PREFIX}-worker
       templateID: ${XO_TEMPLATE_UUID}
       poolID: ${XO_POOL_UUID}

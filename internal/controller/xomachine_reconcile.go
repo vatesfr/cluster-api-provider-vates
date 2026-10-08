@@ -63,7 +63,6 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, xoMachine *in
 		return ctrl.Result{}, nil
 	}
 
-	provider := bootstrap.GetProvider(bsResult.BootstrapProvider)
 	deps := bootstrap.Dependencies{
 		Client:        r.Client,
 		XOClient:      xoClient,
@@ -72,16 +71,17 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, xoMachine *in
 		BootstrapData: bsResult.Data,
 	}
 
-	cloudConfig, err := provider.BuildCloudConfig(ctx, deps)
+	result, err := bootstrap.Build(ctx, deps, bootstrapBehavior(xoMachine))
 	if err != nil {
-		logger.Error(err, "Failed to build cloud config")
+		logger.Error(err, "Failed to build bootstrap payload")
 		if updateErr := xomachine.UpdateCondition(ctx, r.Client, xoMachine, metav1.ConditionFalse, "CloudConfigBuildFailed", err.Error()); updateErr != nil {
 			logger.Error(updateErr, "Failed to update condition")
 		}
 		return ctrl.Result{}, err
 	}
 
-	networkConfig := provider.NetworkConfig(deps)
+	cloudConfig := result.CloudConfig
+	networkConfig := result.NetworkConfig
 
 	vmName := r.buildVMName(xoMachine, bsResult)
 
@@ -115,13 +115,13 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, xoMachine *in
 		}
 		vm, err = xomachine.LookupExistingVM(ctx, r.Client, xoClient, xoMachine, vmID)
 	} else {
-		vm, err = xomachine.CreateVM(ctx, r.Client, xoClient, xoMachine, poolID, templateID, cloudConfig, networkConfig, vmName, bsResult.BootstrapProvider)
+		vm, err = xomachine.CreateVM(ctx, r.Client, xoClient, xoMachine, poolID, templateID, cloudConfig, networkConfig, vmName, xoMachine.Spec.BootstrapProvider)
 	}
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
-	xomachine.SetVMTags(ctx, xoMachine, vm.ID, xoClient, bsResult.BootstrapProvider)
+	xomachine.SetVMTags(ctx, xoMachine, vm.ID, xoClient, xoMachine.Spec.BootstrapProvider)
 
 	if !xoMachine.Status.Ready {
 		result, waitErr := xomachine.WaitForVMReady(ctx, r.Client, xoClient, xoMachine, vm)
@@ -158,6 +158,18 @@ func (r *XOMachineReconciler) ensureFinalizer(ctx context.Context, xoMachine *in
 		}
 	}
 	return nil
+}
+
+// bootstrapBehavior maps the XOMachine's declared bootstrap behavior. What to
+// do with the payload is declared, never inferred from a provider name.
+func bootstrapBehavior(xoMachine *infrastructurev1beta2.XOMachine) bootstrap.Behavior {
+	if xoMachine.Spec.Bootstrap == nil {
+		return bootstrap.Behavior{}
+	}
+	return bootstrap.Behavior{
+		CloudInit: xoMachine.Spec.Bootstrap.CloudInit,
+		KubeVIP:   xoMachine.Spec.Bootstrap.KubeVIP,
+	}
 }
 
 func (r *XOMachineReconciler) buildVMName(xoMachine *infrastructurev1beta2.XOMachine, bsResult bootstrap.ResolveBootstrapDataResult) string {
@@ -210,11 +222,7 @@ func (r *XOMachineReconciler) tryFastPath(ctx context.Context, xoMachine *infras
 		if xoCreds, err := r.resolveMachineCredentials(ctx, xoMachine); err == nil {
 			if xoClient, err := r.newXOClient(ctx, xoCreds); err == nil && xoClient != nil {
 				if vmID, parseErr := xok8scommon.GetVMID(*xoMachine.Status.ProviderID); parseErr == nil {
-					providerName := bootstrap.DetectBootstrapProvider(xoMachine.Spec, nil)
-					if ownerMachine, err := xomachine.GetOwnerMachine(ctx, r.Client, xoMachine); err == nil {
-						providerName = bootstrap.DetectBootstrapProvider(xoMachine.Spec, ownerMachine)
-					}
-					xomachine.SetVMTags(ctx, xoMachine, vmID, xoClient, providerName)
+					xomachine.SetVMTags(ctx, xoMachine, vmID, xoClient, xoMachine.Spec.BootstrapProvider)
 				}
 			}
 		}

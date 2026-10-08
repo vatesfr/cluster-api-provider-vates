@@ -46,16 +46,21 @@ type XOMachineSpec struct {
 	// +optional
 	FailureDomain *string `json:"failureDomain,omitempty"`
 
-	// BootstrapProvider selects the bootstrap provider for this machine.
-	// Supported values: "kubeadm" (default), "talos".
-	// When "talos", the controller passes bootstrap data directly to XO
-	// without cloud-init transformation, SSH key injection, or kube-vip.
+	// BootstrapProvider identifies the bootstrap provider for observability
+	// only: it is applied as the "bootstrap:<name>" tag on the VM. It does not
+	// change how the payload is handled -- declare Bootstrap for that.
 	// +optional
-	// +kubebuilder:validation:Enum=kubeadm;talos
-	// +kubebuilder:default=kubeadm
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	BootstrapProvider string `json:"bootstrapProvider,omitempty"`
 
-	// BootstrapData is the bootstrap data (cloud-init) to inject into the VM.
+	// Bootstrap declares how the bootstrap payload from the owner Machine must
+	// be handled by the infrastructure provider. It describes what to do, never
+	// who produced the payload, so adding a bootstrap provider needs no change
+	// to this controller. When unset, the payload is passed through untouched.
+	// +optional
+	Bootstrap *BootstrapBehavior `json:"bootstrap,omitempty"`
+
+	// BootstrapData is the bootstrap data to inject into the VM.
 	// If empty, the controller will try to read it from the owner Machine's bootstrap secret.
 	// +optional
 	BootstrapData string `json:"bootstrapData,omitempty"`
@@ -67,6 +72,23 @@ type XOMachineSpec struct {
 	// controller's global credentials.
 	// +optional
 	IdentityRef *corev1.LocalObjectReference `json:"identityRef,omitempty"`
+}
+
+// BootstrapBehavior declares what the infrastructure provider must do with the
+// bootstrap payload. It describes what to do, never who produced the payload:
+// there is no provider name and no per-provider code path. The zero value is a
+// full pass-through.
+type BootstrapBehavior struct {
+	// CloudInit reports that the payload is a cloud-init document, which may be
+	// enriched: the SSH keys of the XO user profile are merged in.
+	// +optional
+	CloudInit bool `json:"cloudInit,omitempty"`
+
+	// KubeVIP reports that kube-vip may be injected into the payload. It only
+	// applies to a kubeadm-style cloud-init control plane, so it is ignored
+	// unless CloudInit is true.
+	// +optional
+	KubeVIP bool `json:"kubeVIP,omitempty"`
 }
 
 type NetworkConfig struct {

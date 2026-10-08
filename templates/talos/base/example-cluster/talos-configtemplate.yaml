@@ -15,7 +15,7 @@ spec:
             time:
               servers:
                 - time.cloudflare.com
-                - pool.ntp.org
+                - time.google.com
             kubelet:
               extraArgs:
                 cloud-provider: external

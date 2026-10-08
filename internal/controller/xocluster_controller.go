@@ -32,9 +32,6 @@ import (
 
 const (
 	xoClusterFinalizer = "vates.infrastructure.cluster.x-k8s.io/xocluster"
-	// defaultNamespace is the namespace used for addon ConfigMaps and
-	// ClusterResourceSets.
-	defaultNamespace = "default"
 )
 
 // XOClusterReconciler reconciles a XOCluster object.
@@ -444,10 +441,15 @@ func defaultAddons(a *infrastructurev1beta2.AddonsSpec) *infrastructurev1beta2.A
 
 // ensureAddon creates/updates the per-cluster ConfigMap holding the rendered
 // addon manifest and a ClusterResourceSet targeting only this cluster.
-func (r *XOClusterReconciler) ensureAddon(ctx context.Context, clusterName, addon, crsName, cmName, strategy, manifest string) error {
+//
+// Both objects live in the cluster's own namespace. This is not cosmetic: a
+// ClusterResourceSet is applied by Cluster API only to Clusters in the SAME
+// namespace, so a hardcoded "default" namespace would silently leave every
+// cluster outside it -- which is the normal case -- without CCM or CSI.
+func (r *XOClusterReconciler) ensureAddon(ctx context.Context, namespace, clusterName, addon, crsName, cmName, strategy, manifest string) error {
 	logger := log.FromContext(ctx)
 
-	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: defaultNamespace}}
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: namespace}}
 	op, err := ctrl.CreateOrUpdate(ctx, r.Client, cm, func() error {
 		if cm.Data == nil {
 			cm.Data = make(map[string]string)
@@ -460,7 +462,7 @@ func (r *XOClusterReconciler) ensureAddon(ctx context.Context, clusterName, addo
 	}
 	logger.Info("Addon manifests ConfigMap reconciled", "addon", addon, "cluster", clusterName, "configmap", cmName, "operation", op)
 
-	crs := &addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: crsName, Namespace: defaultNamespace}}
+	crs := &addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: crsName, Namespace: namespace}}
 	op, err = ctrl.CreateOrUpdate(ctx, r.Client, crs, func() error {
 		crs.Spec = addonsv1.ClusterResourceSetSpec{
 			ClusterSelector: metav1.LabelSelector{
@@ -480,12 +482,12 @@ func (r *XOClusterReconciler) ensureAddon(ctx context.Context, clusterName, addo
 
 // removeAddon deletes the per-cluster ConfigMap and ClusterResourceSet of a
 // disabled addon. Resources already applied to the workload cluster are left
-// untouched.
-func (r *XOClusterReconciler) removeAddon(ctx context.Context, clusterName, addon, crsName, cmName string) error {
+// untouched. The objects live in the cluster's namespace, as in ensureAddon.
+func (r *XOClusterReconciler) removeAddon(ctx context.Context, namespace, clusterName, addon, crsName, cmName string) error {
 	logger := log.FromContext(ctx)
 	for _, obj := range []client.Object{
-		&addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: crsName, Namespace: defaultNamespace}},
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: defaultNamespace}},
+		&addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: crsName, Namespace: namespace}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: namespace}},
 	} {
 		if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
 			return err
@@ -538,10 +540,10 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *in
 		if err := tmpl.Execute(&ccmBuf, ccmData); err != nil {
 			return fmt.Errorf("execute CCM template: %w", err)
 		}
-		if err := r.ensureAddon(ctx, clusterName, "ccm", "ccm-deployment-"+clusterName, ccmCMName, "Reconcile", ccmBuf.String()); err != nil {
+		if err := r.ensureAddon(ctx, xoCluster.Namespace, clusterName, "ccm", "ccm-deployment-"+clusterName, ccmCMName, "Reconcile", ccmBuf.String()); err != nil {
 			return err
 		}
-	} else if err := r.removeAddon(ctx, clusterName, "ccm", "ccm-deployment-"+clusterName, ccmCMName); err != nil {
+	} else if err := r.removeAddon(ctx, xoCluster.Namespace, clusterName, "ccm", "ccm-deployment-"+clusterName, ccmCMName); err != nil {
 		return err
 	}
 
@@ -568,10 +570,10 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *in
 		if err := csiTmpl.Execute(&csiBuf, csiData); err != nil {
 			return fmt.Errorf("execute CSI template: %w", err)
 		}
-		if err := r.ensureAddon(ctx, clusterName, "csi", "csi-deployment-"+clusterName, csiCMName, "Reconcile", csiBuf.String()); err != nil {
+		if err := r.ensureAddon(ctx, xoCluster.Namespace, clusterName, "csi", "csi-deployment-"+clusterName, csiCMName, "Reconcile", csiBuf.String()); err != nil {
 			return err
 		}
-	} else if err := r.removeAddon(ctx, clusterName, "csi", "csi-deployment-"+clusterName, csiCMName); err != nil {
+	} else if err := r.removeAddon(ctx, xoCluster.Namespace, clusterName, "csi", "csi-deployment-"+clusterName, csiCMName); err != nil {
 		return err
 	}
 
@@ -581,11 +583,11 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *in
 	cniCMName := "cni-manifests-" + clusterName
 	switch *addons.CNI {
 	case cniCilium:
-		if err := r.ensureAddon(ctx, clusterName, "cni", "cni-deployment-"+clusterName, cniCMName, "ApplyOnce", cniCiliumManifest); err != nil {
+		if err := r.ensureAddon(ctx, xoCluster.Namespace, clusterName, "cni", "cni-deployment-"+clusterName, cniCMName, "ApplyOnce", cniCiliumManifest); err != nil {
 			return err
 		}
 	default: // "none"
-		if err := r.removeAddon(ctx, clusterName, "cni", "cni-deployment-"+clusterName, cniCMName); err != nil {
+		if err := r.removeAddon(ctx, xoCluster.Namespace, clusterName, "cni", "cni-deployment-"+clusterName, cniCMName); err != nil {
 			return err
 		}
 	}

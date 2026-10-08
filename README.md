@@ -128,6 +128,11 @@ Prerequisites: a Talos VM template built for the **`nocloud`** platform with
 the `siderolabs/xen-guest-agent` extension, **never booted**, and with
 **`viridian: false`** in XO.
 
+> Set `TalosControlPlane.spec.controlPlaneConfig.controlplane.talosVersion` to
+> the Talos version of the image (the clusterctl template reads it from
+> `TALOS_VERSION`). Without it, CABPT generates a config for its own default
+> version, which the node rejects — the machine stays in maintenance.
+
 The `templates/talos/base/` templates use placeholders and must **not** be
 edited directly. Instead, create an **overlay** to hold your environment's
 values (real UUIDs, VIP address, etc.).
@@ -153,6 +158,22 @@ kubectl apply -k templates/talos/overlays/my-env/
 ```
 
 See [templates/talos/README.md](templates/talos/README.md) for the complete file contents.
+
+## Bootstrap behavior
+
+The provider never identifies the bootstrap provider: what to do with the
+bootstrap payload is **declared** on each `XOMachine` / `XOMachineTemplate`
+under `spec.bootstrap`.
+
+| Field | Effect |
+|---|---|
+| `cloudInit` | treat the payload as cloud-init: allows merging the XO user's SSH keys (only when the `XOCluster` sets `injectSSHKeys: true`) |
+| `kubeVIP` | allows injecting kube-vip (only when the `XOCluster` sets `controlPlaneLB: kube-vip`) |
+
+With **no** `spec.bootstrap`, the payload is passed through untouched. The
+shipped templates set it for kubeadm; the Talos flow needs none. Adding a new
+bootstrap provider does not require any change to this controller — only the
+declaration in its `XOMachineTemplate`.
 
 ## Development
 

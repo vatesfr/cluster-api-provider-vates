@@ -179,36 +179,40 @@ var _ = Describe("addons", func() {
 	})
 
 	Describe("ensureAddon / removeAddon", func() {
-		It("creates a ConfigMap and a ClusterResourceSet for an addon", func() {
+		// A non-default namespace, so a regression to a hardcoded "default"
+		// namespace fails here.
+		const ns = "vates-prod"
+
+		It("creates the ConfigMap and ClusterResourceSet in the cluster namespace", func() {
 			r.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
 
-			Expect(r.ensureAddon(ctx, "my-cluster", "cni", "cni-deployment-my-cluster", "cni-manifests-my-cluster", "ApplyOnce", "---\nkind: ConfigMap\n")).To(Succeed())
+			Expect(r.ensureAddon(ctx, ns, "my-cluster", "cni", "cni-deployment-my-cluster", "cni-manifests-my-cluster", "ApplyOnce", "---\nkind: ConfigMap\n")).To(Succeed())
 
 			cm := &corev1.ConfigMap{}
-			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "cni-manifests-my-cluster"}, cm)).To(Succeed())
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "cni-manifests-my-cluster"}, cm)).To(Succeed())
 			Expect(cm.Data["cni.yaml"]).To(ContainSubstring("kind: ConfigMap"))
 
 			crs := &addonsv1.ClusterResourceSet{}
-			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "cni-deployment-my-cluster"}, crs)).To(Succeed())
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "cni-deployment-my-cluster"}, crs)).To(Succeed())
 			Expect(crs.Spec.Strategy).To(Equal("ApplyOnce"))
 			Expect(crs.Spec.Resources).To(Equal([]addonsv1.ResourceRef{{Kind: "ConfigMap", Name: "cni-manifests-my-cluster"}}))
 			Expect(crs.Spec.ClusterSelector.MatchLabels).To(HaveKeyWithValue("cluster.x-k8s.io/cluster-name", "my-cluster"))
 		})
 
 		It("removes the ConfigMap and ClusterResourceSet of a disabled addon", func() {
-			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "csi-manifests-my-cluster", Namespace: "default"}, Data: map[string]string{"csi.yaml": "x"}}
-			crs := &addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: "csi-deployment-my-cluster", Namespace: "default"}}
+			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "csi-manifests-my-cluster", Namespace: ns}, Data: map[string]string{"csi.yaml": "x"}}
+			crs := &addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: "csi-deployment-my-cluster", Namespace: ns}}
 			r.Client = fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm, crs).Build()
 
-			Expect(r.removeAddon(ctx, "my-cluster", "csi", "csi-deployment-my-cluster", "csi-manifests-my-cluster")).To(Succeed())
+			Expect(r.removeAddon(ctx, ns, "my-cluster", "csi", "csi-deployment-my-cluster", "csi-manifests-my-cluster")).To(Succeed())
 
-			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "csi-manifests-my-cluster"}, &corev1.ConfigMap{})).NotTo(Succeed())
-			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "csi-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{})).NotTo(Succeed())
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "csi-manifests-my-cluster"}, &corev1.ConfigMap{})).NotTo(Succeed())
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "csi-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{})).NotTo(Succeed())
 		})
 
 		It("is a no-op when removing an addon that was never created", func() {
 			r.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
-			Expect(r.removeAddon(ctx, "my-cluster", "cni", "cni-deployment-my-cluster", "cni-manifests-my-cluster")).To(Succeed())
+			Expect(r.removeAddon(ctx, ns, "my-cluster", "cni", "cni-deployment-my-cluster", "cni-manifests-my-cluster")).To(Succeed())
 		})
 	})
 

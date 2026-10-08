@@ -5,6 +5,10 @@ metadata:
 spec:
   template:
     spec:
+      bootstrapProvider: kubeadm
+      bootstrap:
+        cloudInit: true
+        kubeVIP: true
       namePrefix: worker
       templateID: <your-xo-template-uuid>
       poolID: <your-xo-pool-uuid>

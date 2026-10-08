@@ -39,8 +39,29 @@ overlay directory (e.g. `my-env/`); do **not** edit `base/`.
 clusterctl init --bootstrap kubeadm --control-plane kubeadm --infrastructure vates
 ```
 
-`CLUSTER_TOPOLOGY=true` is only required if you use the ClusterClass/overlay flow
-(see below); the flat `clusterctl generate` flow does not need it.
+The **ClusterClass / overlay flow** (managed topologies) requires the
+`ClusterTopology` feature gate. `clusterctl init` **disables it by default**, so
+export it *before* initializing — otherwise the management cluster rejects every
+`ClusterClass` and `...Template` with:
+
+```
+spec: Forbidden: can be set only if the ClusterTopology feature flag is enabled
+```
+
+```bash
+export CLUSTER_TOPOLOGY=true
+clusterctl init --bootstrap kubeadm --control-plane kubeadm --infrastructure vates
+```
+
+The gate must be on for the CAPI core, control-plane and bootstrap controllers
+(each checks it for its own `...Template` kinds). The flat `clusterctl generate`
+flow does **not** need it.
+
+> A `ClusterClass` references its `XOMachineTemplate`s (the `machineInfrastructure`
+> and worker `infrastructure.templateRef`) by name; those live in
+> `templates/kubeadm/base/machinetemplates/`, a **separate** kustomization from
+> `base/clusterclass/`. Apply both (or the whole `base/`, which includes them),
+> otherwise the Class has dangling references.
 
 ### VM template
 
@@ -149,6 +170,15 @@ spec:
         networks:
           - networkID: <your-xo-network-uuid>
 ```
+
+> **`spec.bootstrap`** — the `base/` `XOMachineTemplate`s set
+> `bootstrap: {cloudInit: true, kubeVIP: true}`. This is what lets the provider
+> enrich the kubeadm cloud-init: `cloudInit` allows merging the XO user's SSH
+> keys (only when the `XOCluster` sets `injectSSHKeys: true`), and `kubeVIP`
+> allows injecting kube-vip (only when the `XOCluster` sets
+> `controlPlaneLB: kube-vip`). **Keep it when you copy or derive a template**:
+> with no `spec.bootstrap`, the payload is passed through untouched and neither
+> happens.
 
 `patch-cluster.yaml` — the cluster topology: control plane endpoint, machine
 prefix, load balancer, and the number of replicas (**replace the values with

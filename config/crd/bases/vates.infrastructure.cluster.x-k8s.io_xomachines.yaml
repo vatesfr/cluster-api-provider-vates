@@ -56,21 +56,36 @@ spec:
             description: XOMachineSpec defines the desired state of a Xen Orchestra
               VM.
             properties:
+              bootstrap:
+                description: |-
+                  Bootstrap declares how the bootstrap payload from the owner Machine must
+                  be handled by the infrastructure provider. It describes what to do, never
+                  who produced the payload, so adding a bootstrap provider needs no change
+                  to this controller. When unset, the payload is passed through untouched.
+                properties:
+                  cloudInit:
+                    description: |-
+                      CloudInit reports that the payload is a cloud-init document, which may be
+                      enriched: the SSH keys of the XO user profile are merged in.
+                    type: boolean
+                  kubeVIP:
+                    description: |-
+                      KubeVIP reports that kube-vip may be injected into the payload. It only
+                      applies to a kubeadm-style cloud-init control plane, so it is ignored
+                      unless CloudInit is true.
+                    type: boolean
+                type: object
               bootstrapData:
                 description: |-
-                  BootstrapData is the bootstrap data (cloud-init) to inject into the VM.
+                  BootstrapData is the bootstrap data to inject into the VM.
                   If empty, the controller will try to read it from the owner Machine's bootstrap secret.
                 type: string
               bootstrapProvider:
-                default: kubeadm
                 description: |-
-                  BootstrapProvider selects the bootstrap provider for this machine.
-                  Supported values: "kubeadm" (default), "talos".
-                  When "talos", the controller passes bootstrap data directly to XO
-                  without cloud-init transformation, SSH key injection, or kube-vip.
-                enum:
-                - kubeadm
-                - talos
+                  BootstrapProvider identifies the bootstrap provider for observability
+                  only: it is applied as the "bootstrap:<name>" tag on the VM. It does not
+                  change how the payload is handled -- declare Bootstrap for that.
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                 type: string
               failureDomain:
                 description: FailureDomain is the failure domain unique identifier

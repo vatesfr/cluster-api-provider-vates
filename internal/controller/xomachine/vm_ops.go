@@ -30,7 +30,11 @@ import (
 func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, xoMachine *infrastructurev1beta2.XOMachine, poolID uuid.UUID, templateID uuid.UUID, cloudConfig string, networkConfig *string, vmName string, providerName string) (*payloads.VM, error) {
 	logger := log.FromContext(ctx)
 
-	createParams := buildCreateParams(templateID, vmName, cloudConfig, networkConfig)
+	// The unique marker this provider writes into the VM at creation. It is
+	// what a retry uses to recognize a VM a failed create left behind: a name
+	// label is NOT unique in Xen Orchestra and can only narrow a search.
+	marker := vmMarker(xoMachine)
+	createParams := buildCreateParams(templateID, vmName, cloudConfig, networkConfig, marker)
 
 	if xoMachine.Spec.ResourceSet != nil && xoMachine.Spec.ResourceSet.Memory != "" {
 		memQty, err := resource.ParseQuantity(xoMachine.Spec.ResourceSet.Memory)
@@ -48,15 +52,38 @@ func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClie
 
 	addVIFsToParams(ctx, xoMachine, v1Client, createParams, poolID)
 
-	vm, err := xoClient.Client.VM().Create(ctx, poolID, createParams)
-	if err != nil {
-		if strings.Contains(err.Error(), "unmarshal") {
-			logger.Info("V2 API created VM but returned bare task ID, extracting", "error", err)
-			vm, err = handleV2BareTaskResponse(ctx, xoClient, err)
-		}
+	// Idempotency first. A previous reconcile may have created this VM and then
+	// lost the result: the API can create the VM and still answer with an error
+	// (the bare-task/unmarshal quirk handled below), or the providerID write can
+	// fail after the VM exists. Either way the XOMachine has no providerID, the
+	// next reconcile calls CreateVM again, and -- without this lookup -- a SECOND
+	// VM is created. The first is left untagged and Halted, unreferenced: the
+	// orphan this provider used to leak (see CAVP/NEXT.md). Adopting a VM with
+	// the same name, not owned by another machine, is what closes that.
+	vm := findAdoptableVM(ctx, xoClient, vmName, marker)
+	if vm != nil {
+		logger.Info("adopting an existing VM with the same name instead of creating a second",
+			"name", vmName, "id", vm.ID.String())
+	} else {
+		var err error
+		vm, err = xoClient.Client.VM().Create(ctx, poolID, createParams)
 		if err != nil {
-			logger.Error(err, "Failed to create VM", "name", vmName)
-			return nil, WithConditionUpdate(ctx, c, xoMachine, err, metav1.ConditionFalse, "VmCreationFailed")
+			if strings.Contains(err.Error(), "unmarshal") {
+				logger.Info("V2 API created VM but returned bare task ID, extracting", "error", err)
+				vm, err = handleV2BareTaskResponse(ctx, xoClient, err)
+			}
+			if err != nil {
+				// The create may still have succeeded server-side. Look once
+				// more before giving up, so the retry adopts rather than
+				// duplicating.
+				if vm = findAdoptableVM(ctx, xoClient, vmName, marker); vm != nil {
+					logger.Info("adopted the VM a failed create left behind",
+						"name", vmName, "id", vm.ID.String())
+				} else {
+					logger.Error(err, "Failed to create VM", "name", vmName)
+					return nil, WithConditionUpdate(ctx, c, xoMachine, err, metav1.ConditionFalse, "VmCreationFailed")
+				}
+			}
 		}
 	}
 
@@ -102,32 +129,40 @@ func SetVMTags(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, 
 	logger.Info("Set VM tags", "id", vmID.String(), "tags", tags)
 }
 
-// vmTags builds the identifying tags for a VM: it is always tagged with
-// "vates-capi" (managed by this provider) plus a mandatory "bootstrap:<name>"
-// tag derived from the bootstrap provider name, so any new bootstrap provider
-// is tagged automatically once it implements the Provider interface.
+// vmTags builds the identifying tags for a VM. It is always tagged with
+// "vates-capi" (managed by this provider); the "bootstrap:<name>" tag is added
+// only when the XOMachine declares a bootstrap provider name. The name is
+// purely informational: it never drives behavior.
 func vmTags(xoMachine *infrastructurev1beta2.XOMachine, providerName string) []string {
 	role := "worker"
 	if _, ok := xoMachine.Labels[clusterv1.MachineControlPlaneLabel]; ok {
 		role = "control-plane"
 	}
-	return []string{
+	tags := []string{
 		"vates-capi",
-		"bootstrap:" + providerName,
 		"cluster-name:" + xoMachine.Labels[clusterv1.ClusterNameLabel],
 		"machine:" + xoMachine.Name,
 		"role:" + role,
 	}
+	if providerName != "" {
+		tags = append(tags, "bootstrap:"+providerName)
+	}
+	return tags
 }
 
-func buildCreateParams(templateID uuid.UUID, vmName string, cloudConfig string, networkConfig *string) *payloads.CreateVMParams {
+func buildCreateParams(templateID uuid.UUID, vmName string, cloudConfig string, networkConfig *string, marker string) *payloads.CreateVMParams {
 	createParams := &payloads.CreateVMParams{
-		NameLabel:     vmName,
-		Template:      templateID,
-		AutoPoweron:   ptr.To(false),
-		Clone:         ptr.To(true),
-		CloudConfig:   ptr.To(cloudConfig),
-		NetworkConfig: networkConfig,
+		NameLabel: vmName,
+		// The marker is set HERE, in the same call that creates the VM, so it
+		// is present even if the create's result is lost. Tags cannot do this:
+		// the API sets them in a second call, which is exactly the window in
+		// which the orphan leak happened. See vmMarker.
+		NameDescription: marker,
+		Template:        templateID,
+		AutoPoweron:     ptr.To(false),
+		Clone:           ptr.To(true),
+		CloudConfig:     ptr.To(cloudConfig),
+		NetworkConfig:   networkConfig,
 	}
 	return createParams
 }
@@ -487,6 +522,66 @@ func saveProviderID(ctx context.Context, c client.Client, xoMachine *infrastruct
 			logger.Error(err, "Failed to save providerID in status after retry")
 			return err
 		}
+	}
+	return nil
+}
+
+// vmMarker is the unique, stable string this provider writes into a VM's
+// description at creation, so a create whose result is lost can be recognized
+// and adopted on the retry. It is derived from the XOMachine UID: unique across
+// management clusters and never reused.
+//
+// A name label cannot serve this purpose: Xen Orchestra does not enforce
+// uniqueness on name_label, so two VMs -- another machine's, another cluster's,
+// a user's -- can share one. The name only narrows the search; the marker is
+// what proves the VM is ours. An empty marker (no UID, as in some unit tests)
+// disables adoption on purpose: without a unique handle, creating is the safe
+// choice.
+func vmMarker(xoMachine *infrastructurev1beta2.XOMachine) string {
+	if xoMachine == nil || xoMachine.UID == "" {
+		return ""
+	}
+	return "vates-capi-machine:" + string(xoMachine.UID)
+}
+
+// findAdoptableVM looks for the VM this XOMachine created, that a previous,
+// interrupted create left behind, so the reconcile adopts it instead of
+// creating a second one. It is best-effort: a lookup that fails returns nil and
+// creation proceeds -- the old behavior is better than a node that never comes
+// up.
+//
+// The name label filters the list down (the VM was created with this name); the
+// marker, matched exactly, is what decides.
+func findAdoptableVM(ctx context.Context, xoClient *xok8scommon.XoClient, vmName, marker string) *payloads.VM {
+	if marker == "" {
+		return nil
+	}
+	logger := log.FromContext(ctx)
+	vms, err := xoClient.Client.VM().GetAll(ctx, 0, "name_label:"+vmName)
+	if err != nil {
+		logger.Info("could not list VMs while looking for an adoptable one; creating a new VM",
+			"name", vmName, "error", err)
+		return nil
+	}
+	return adoptableVM(vms, vmName, marker)
+}
+
+// adoptableVM returns the VM carrying this provider's marker, or nil. A name
+// match alone is NEVER enough: name_label is not unique in Xen Orchestra, so a
+// VM with the same name that does not carry the marker is not ours and is left
+// untouched.
+func adoptableVM(vms []*payloads.VM, vmName, marker string) *payloads.VM {
+	if marker == "" {
+		return nil
+	}
+	for _, vm := range vms {
+		if vm == nil || vm.NameDescription != marker {
+			continue
+		}
+		if vmName != "" && vm.NameLabel != vmName {
+			continue
+		}
+		return vm
 	}
 	return nil
 }
