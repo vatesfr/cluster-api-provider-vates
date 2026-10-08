@@ -322,6 +322,68 @@ var _ = Describe("Reconcile", func() {
 			Expect(updated.Status.Ready).To(BeTrue())
 		})
 
+		It("adopts a VM an interrupted create left behind instead of creating a second", func() {
+			vmUUID := uuid.Must(uuid.NewV4())
+			poolUUID := uuid.Must(uuid.NewV4())
+			templateUUID := uuid.Must(uuid.NewV4())
+			uid := types.UID("machine-uid-adopt")
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&infrastructurev1beta2.XOMachine{}).WithObjects(
+				&infrastructurev1beta2.XOMachine{
+					ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: uid},
+					Spec: infrastructurev1beta2.XOMachineSpec{
+						TemplateID:    templateUUID.String(),
+						PoolID:        poolUUID.String(),
+						NamePrefix:    "test",
+						BootstrapData: "#cloud-config\n",
+					},
+				},
+			).Build()
+
+			r = &XOMachineReconciler{
+				Client: fakeClient,
+				Scheme: scheme,
+				newClientFunc: func(_ context.Context, _ *xok8scommon.XoConfig) (*xok8scommon.XoClient, error) {
+					return &xok8scommon.XoClient{Client: mockLib}, nil
+				},
+			}
+
+			// The lookup returns the VM a failed create left behind: same name
+			// AND the marker this XOMachine wrote at creation. Create has NO
+			// expectation, so gomock fails if the code creates a second VM --
+			// which is the orphan leak this test guards against.
+			mockVM.EXPECT().
+				GetAll(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return([]*payloads.VM{{
+					ID:              vmUUID,
+					NameLabel:       "test",
+					NameDescription: "vates-capi-machine:" + string(uid),
+					PowerState:      payloads.PowerStateRunning,
+					MainIpAddress:   "192.168.1.42",
+				}}, nil)
+
+			mockVM.EXPECT().
+				GetByID(gomock.Any(), vmUUID).
+				Return(&payloads.VM{
+					ID:            vmUUID,
+					NameLabel:     "test",
+					PowerState:    payloads.PowerStateRunning,
+					MainIpAddress: "192.168.1.42",
+				}, nil)
+
+			result, err := r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+
+			updated := &infrastructurev1beta2.XOMachine{}
+			Expect(r.Get(ctx, types.NamespacedName{Name: "test", Namespace: "default"}, updated)).To(Succeed())
+			Expect(updated.Status.ProviderID).NotTo(BeNil())
+			Expect(*updated.Status.ProviderID).NotTo(BeEmpty())
+			Expect(updated.Status.Ready).To(BeTrue())
+		})
+
 		It("requeues when the VM started but has no IP yet", func() {
 			vmUUID := uuid.Must(uuid.NewV4())
 			poolUUID := uuid.Must(uuid.NewV4())
