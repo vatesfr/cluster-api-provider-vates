@@ -99,7 +99,7 @@ a local overrides layer), see
 
 `clusterctl generate cluster` (without `--from`) uses the provider's default
 `cluster-template.yaml`, shipped as a release asset. See
-[RELEASING.md](RELEASING.md) for how to publish a release.
+[Releasing](docs/operations/releasing.md) for how to publish a release.
 
 ## Using with Talos
 
@@ -179,7 +179,8 @@ declaration in its `XOMachineTemplate`.
 ## Development
 
 Contributors building from source (build/push loop for kind and k3s,
-clusterctl overrides, tests, debugging): see [DEVELOPMENT.md](DEVELOPMENT.md).
+clusterctl overrides, tests, debugging): see
+[Development](docs/contributing/development.md).
 
 ## Project structure
 
@@ -220,7 +221,7 @@ make release-manifests IMG=ghcr.io/vatesfr/cluster-api-provider-vates:latest
 `make release-manifests` writes the three assets `clusterctl` needs —
 `infrastructure-components.yaml`, `metadata.yaml` and `cluster-template.yaml` —
 into `dist/`. They are generated (git-ignored) and attached to the release by
-CI. See [RELEASING.md](RELEASING.md) for the full release workflow.
+CI. See [Releasing](docs/operations/releasing.md) for the full release workflow.
 
 ## License
 

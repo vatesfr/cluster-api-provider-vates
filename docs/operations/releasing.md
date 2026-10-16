@@ -71,6 +71,11 @@ Use a valid semantic version as the git tag; this page writes it `<version>`
 release and therefore the repository's *latest*, which is what `clusterctl`
 resolves when no version is given.
 
+The committed Helm chart (`dist/chart/Chart.yaml`) carries the same version, in
+`version` and `appVersion`; set both to `<version>` before tagging — the chart is
+committed and does not regenerate on its own. Regenerating it with the
+kubebuilder Helm plugin does the same thing.
+
 ### 2. Build and push the controller image
 
 The image referenced by `infrastructure-components.yaml` must be pullable by the

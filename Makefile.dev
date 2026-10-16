@@ -2,6 +2,11 @@ CONTAINER_TOOL ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/
 NS ?= capi-system
 DEPLOY ?= vates-capi-controller-manager
 
+# Version used by `dev-overrides` to lay out the local clusterctl overrides
+# (…/infrastructure-vates/$(VERSION)/). A placeholder, so it never goes stale;
+# override it on the command line if you need a specific version.
+VERSION ?= dev
+
 # Fixed dev tag: the image is loaded onto the nodes (kind/k3s), not pulled
 # from a registry, so a stable tag + imagePullPolicy=IfNotPresent + rollout
 # restart is enough for kubelet to pick up the freshly loaded image.
@@ -58,11 +63,11 @@ restart:
 .PHONY: dev-overrides
 dev-overrides:
 	$(MAKE) release-manifests IMG=$(IMG)
-	@mkdir -p "$(HOME)/.config/cluster-api/overrides/infrastructure-vates/v1.1.0-rc4"
-	@cp dist/infrastructure-components.yaml dist/metadata.yaml dist/cluster-template.yaml "$(HOME)/.config/cluster-api/overrides/infrastructure-vates/v1.1.0-rc4/"
+	@mkdir -p "$(HOME)/.config/cluster-api/overrides/infrastructure-vates/$(VERSION)"
+	@cp dist/infrastructure-components.yaml dist/metadata.yaml dist/cluster-template.yaml "$(HOME)/.config/cluster-api/overrides/infrastructure-vates/$(VERSION)/"
 	@if [ ! -f "$(HOME)/.config/cluster-api/clusterctl.yaml" ]; then \
 		echo "Creating $(HOME)/.config/cluster-api/clusterctl.yaml"; \
-		{ echo 'providers:'; echo '  - name: vates'; echo '    type: InfrastructureProvider'; echo "    url: file://\$${HOME}/.config/cluster-api/overrides/infrastructure-vates/v1.1.0-rc4/infrastructure-components.yaml"; } > "$(HOME)/.config/cluster-api/clusterctl.yaml"; \
+		{ echo 'providers:'; echo '  - name: vates'; echo '    type: InfrastructureProvider'; echo "    url: file://\$${HOME}/.config/cluster-api/overrides/infrastructure-vates/$(VERSION)/infrastructure-components.yaml"; } > "$(HOME)/.config/cluster-api/clusterctl.yaml"; \
 	elif ! grep -q 'name: vates' "$(HOME)/.config/cluster-api/clusterctl.yaml"; then \
 		echo "WARNING: vates provider not registered in $(HOME)/.config/cluster-api/clusterctl.yaml — add it manually (see README)"; \
 	fi
