@@ -1,3 +1,23 @@
+{{- /*
+Cilium 1.16.6, rendered from the Helm chart (rendered with Go text/template by
+the XOCluster controller, see ciliumManifestData):
+
+  helm template cilium cilium/cilium --version 1.16.6 --namespace kube-system \
+    --set devices=eth0 --set hubble.enabled=false
+
+.Talos adds the Talos Linux values:
+    --set ipam.mode=kubernetes \
+    --set securityContext.capabilities.ciliumAgent="{CHOWN,KILL,NET_ADMIN,NET_RAW,IPC_LOCK,SYS_ADMIN,SYS_RESOURCE,DAC_OVERRIDE,FOWNER,SETGID,SETUID}" \
+    --set securityContext.capabilities.cleanCiliumState="{NET_ADMIN,SYS_ADMIN,SYS_RESOURCE}" \
+    --set cgroup.autoMount.enabled=false --set cgroup.hostRoot=/sys/fs/cgroup
+
+.KubeProxyReplacement adds:
+    --set kubeProxyReplacement=true \
+    --set k8sServiceHost=<.K8sServiceHost> --set k8sServicePort=<.K8sServicePort>
+
+When upgrading Cilium, re-render the four combinations and keep the
+conditionals below in sync.
+*/ -}}
 ---
 # Source: cilium/templates/cilium-agent/serviceaccount.yaml
 apiVersion: v1
@@ -158,12 +178,14 @@ data:
   devices: "eth0"
   enable-runtime-device-detection: "true"
 
-  kube-proxy-replacement: "false"
+  kube-proxy-replacement: "{{ .KubeProxyReplacement }}"
   kube-proxy-replacement-healthz-bind-address: ""
   bpf-lb-sock: "false"
+{{- if not .KubeProxyReplacement }}
   enable-host-port: "false"
   enable-external-ips: "false"
   enable-node-port: "false"
+{{- end }}
   enable-health-check-nodeport: "true"
   enable-health-check-loadbalancer-ip: "false"
   node-port-bind-protection: "true"
@@ -185,10 +207,15 @@ data:
   enable-node-selector-labels: "false"
   synchronize-k8s-nodes: "true"
   operator-api-serve-addr: "127.0.0.1:9234"
+{{- if .Talos }}
+  ipam: "kubernetes"
+  ipam-cilium-node-update-rate: "15s"
+{{- else }}
   ipam: "cluster-pool"
   ipam-cilium-node-update-rate: "15s"
   cluster-pool-ipv4-cidr: "10.0.0.0/8"
   cluster-pool-ipv4-mask-size: "24"
+{{- end }}
   egress-gateway-reconciliation-trigger-interval: "1s"
   enable-vtep: "false"
   vtep-endpoint: ""
@@ -197,7 +224,7 @@ data:
   vtep-mac: ""
   procfs: "/host/proc"
   bpf-root: "/sys/fs/bpf"
-  cgroup-root: "/run/cilium/cgroupv2"
+  cgroup-root: "{{ .CgroupRoot }}"
   enable-k8s-terminating-endpoint: "true"
   enable-sctp: "false"
 
@@ -793,6 +820,12 @@ spec:
             resourceFieldRef:
               resource: limits.memory
               divisor: '1'
+{{- if .KubeProxyReplacement }}
+        - name: KUBERNETES_SERVICE_HOST
+          value: {{ printf "%q" .K8sServiceHost }}
+        - name: KUBERNETES_SERVICE_PORT
+          value: "{{ .K8sServicePort }}"
+{{- end }}
         lifecycle:
           postStart:
             exec:
@@ -835,7 +868,9 @@ spec:
               - NET_ADMIN
               - NET_RAW
               - IPC_LOCK
+{{- if not .Talos }}
               - SYS_MODULE
+{{- end }}
               - SYS_ADMIN
               - SYS_RESOURCE
               - DAC_OVERRIDE
@@ -864,6 +899,11 @@ spec:
           # is privileged and set the mount propagation from host to container
           # in Cilium.
           mountPropagation: HostToContainer
+{{- if .Talos }}
+        # Check for duplicate mounts before mounting
+        - name: cilium-cgroup
+          mountPath: /sys/fs/cgroup
+{{- end }}
         - name: cilium-run
           mountPath: /var/run/cilium
         - name: cilium-netns
@@ -900,10 +940,17 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.namespace
+{{- if .KubeProxyReplacement }}
+        - name: KUBERNETES_SERVICE_HOST
+          value: {{ printf "%q" .K8sServiceHost }}
+        - name: KUBERNETES_SERVICE_PORT
+          value: "{{ .K8sServicePort }}"
+{{- end }}
         volumeMounts:
         - name: tmp
           mountPath: /tmp
         terminationMessagePolicy: FallbackToLogsOnError
+{{- if not .Talos }}
       # Required to mount cgroup2 filesystem on the underlying Kubernetes node.
       # We use nsenter command with host's cgroup and mount namespaces enabled.
       - name: mount-cgroup
@@ -943,6 +990,7 @@ spec:
               - SYS_PTRACE
             drop:
               - ALL
+{{- end }}
       - name: apply-sysctl-overwrites
         image: "quay.io/cilium/cilium:v1.16.6@sha256:1e0896b1c4c188b4812c7e0bed7ec3f5631388ca88325c1391a0ef9172c448da"
         imagePullPolicy: IfNotPresent
@@ -1021,6 +1069,12 @@ spec:
               name: cilium-config
               key: write-cni-conf-when-ready
               optional: true
+{{- if .KubeProxyReplacement }}
+        - name: KUBERNETES_SERVICE_HOST
+          value: {{ printf "%q" .K8sServiceHost }}
+        - name: KUBERNETES_SERVICE_PORT
+          value: "{{ .K8sServicePort }}"
+{{- end }}
         terminationMessagePolicy: FallbackToLogsOnError
         securityContext:
           seLinuxOptions:
@@ -1029,7 +1083,9 @@ spec:
           capabilities:
             add:
               - NET_ADMIN
+{{- if not .Talos }}
               - SYS_MODULE
+{{- end }}
               - SYS_ADMIN
               - SYS_RESOURCE
             drop:
@@ -1039,7 +1095,7 @@ spec:
           mountPath: /sys/fs/bpf
           # Required to mount cgroup filesystem from the host to cilium agent pod
         - name: cilium-cgroup
-          mountPath: /run/cilium/cgroupv2
+          mountPath: {{ .CgroupRoot }}
           mountPropagation: HostToContainer
         - name: cilium-run
           mountPath: /var/run/cilium # wait-for-kube-proxy
@@ -1108,7 +1164,7 @@ spec:
       # To keep state between restarts / upgrades for cgroup2 filesystem
       - name: cilium-cgroup
         hostPath:
-          path: /run/cilium/cgroupv2
+          path: {{ .CgroupRoot }}
           type: DirectoryOrCreate
       # To install cilium cni plugin in the host
       - name: cni-path
@@ -1265,6 +1321,12 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.namespace
+{{- if .KubeProxyReplacement }}
+        - name: KUBERNETES_SERVICE_HOST
+          value: {{ printf "%q" .K8sServiceHost }}
+        - name: KUBERNETES_SERVICE_PORT
+          value: "{{ .K8sServicePort }}"
+{{- end }}
         ports:
         - name: envoy-metrics
           containerPort: 9964
@@ -1415,6 +1477,12 @@ spec:
               key: debug
               name: cilium-config
               optional: true
+{{- if .KubeProxyReplacement }}
+        - name: KUBERNETES_SERVICE_HOST
+          value: {{ printf "%q" .K8sServiceHost }}
+        - name: KUBERNETES_SERVICE_PORT
+          value: "{{ .K8sServicePort }}"
+{{- end }}
         ports:
         - name: prometheus
           containerPort: 9963

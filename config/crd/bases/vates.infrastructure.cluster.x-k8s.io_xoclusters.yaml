@@ -65,6 +65,43 @@ spec:
                       CCM installs the Xen Orchestra cloud-controller-manager (node addresses,
                       service load balancers). Defaults to true.
                     type: boolean
+                  cilium:
+                    description: |-
+                      Cilium configures the Cilium CNI installed when cni is "cilium". When
+                      nil, Cilium runs alongside kube-proxy.
+                    properties:
+                      k8sServiceHost:
+                        description: |-
+                          K8sServiceHost is the API server host used by Cilium when
+                          kubeProxyReplacement is enabled. It must be reachable from every node
+                          without a CNI. Defaults to "localhost" (Talos KubePrism) on Talos
+                          clusters and to the control plane endpoint host otherwise.
+                        minLength: 1
+                        type: string
+                      k8sServicePort:
+                        description: |-
+                          K8sServicePort is the API server port used with K8sServiceHost.
+                          Defaults to 7445 (Talos KubePrism) on Talos clusters and to the control
+                          plane endpoint port otherwise.
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                      kubeProxyReplacement:
+                        default: false
+                        description: |-
+                          KubeProxyReplacement makes Cilium fully replace kube-proxy (Services,
+                          NodePorts, ...). The Cilium agent and operator then reach the API server
+                          directly through k8sServiceHost:k8sServicePort instead of the kubernetes
+                          Service, which is not routed until Cilium is running. Defaults to false.
+                        type: boolean
+                    type: object
+                    x-kubernetes-validations:
+                    - message: k8sServiceHost and k8sServicePort must be set together
+                      rule: has(self.k8sServiceHost) == has(self.k8sServicePort)
+                    - message: k8sServiceHost and k8sServicePort require kubeProxyReplacement
+                      rule: '!has(self.k8sServiceHost) || (has(self.kubeProxyReplacement)
+                        && self.kubeProxyReplacement)'
                   cni:
                     description: |-
                       CNI selects the Container Network Interface installed via
@@ -105,6 +142,11 @@ spec:
                         type: string
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: cilium.kubeProxyReplacement requires cni to be cilium
+                  rule: '!(has(self.cilium) && has(self.cilium.kubeProxyReplacement)
+                    && self.cilium.kubeProxyReplacement) || (has(self.cni) && self.cni
+                    == ''cilium'')'
               controlPlaneEndpoint:
                 description: ControlPlaneEndpoint is the endpoint for the control
                   plane.

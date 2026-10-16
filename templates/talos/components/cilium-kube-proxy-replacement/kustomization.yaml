@@ -1,0 +1,49 @@
+# Cilium CNI with full kube-proxy replacement.
+#
+# Disables both the Talos default CNI (flannel) and kube-proxy on every node,
+# and lets the vates provider install Cilium with kubeProxyReplacement=true
+# through a ClusterResourceSet. Without kube-proxy the kubernetes Service is
+# not routed until Cilium runs, so Cilium reaches the API server through Talos
+# KubePrism (localhost:7445, enabled by default on every node; do not disable
+# machine.features.kubePrism).
+#
+# Use it from an overlay (pick only one of the cilium components):
+#   components:
+#     - ../../components/cilium-kube-proxy-replacement
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - target:
+      kind: TalosControlPlane
+    patch: |-
+      - op: add
+        path: /spec/controlPlaneConfig/controlplane/strategicPatches/-
+        value: |
+          cluster:
+            network:
+              cni:
+                name: none
+            proxy:
+              disabled: true
+  - target:
+      kind: TalosConfigTemplate
+    patch: |-
+      - op: add
+        path: /spec/template/spec/strategicPatches/-
+        value: |
+          cluster:
+            network:
+              cni:
+                name: none
+            proxy:
+              disabled: true
+  - target:
+      kind: XOCluster
+    patch: |-
+      - op: add
+        path: /spec/addons
+        value:
+          cni: cilium
+          cilium:
+            kubeProxyReplacement: true

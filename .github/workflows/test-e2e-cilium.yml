@@ -1,0 +1,73 @@
+name: E2E Cilium
+
+# End-to-end test of the Cilium CNI addon on kind (see hack/e2e-cilium.sh):
+# the provider renders Cilium into a ClusterResourceSet that Cluster API
+# applies to a workload kind cluster without CNI (and without kube-proxy in
+# kube-proxy replacement mode).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - api/**
+      - internal/controller/**
+      - cmd/**
+      - config/**
+      - Dockerfile
+      - go.mod
+      - go.sum
+      - hack/e2e-cilium.sh
+      - .github/workflows/test-e2e-cilium.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  e2e-cilium:
+    permissions:
+      contents: read
+    name: ${{ matrix.control-plane }} / ${{ matrix.mode }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        control-plane: [talos, kubeadm]
+        mode: [kube-proxy-replacement, standard]
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install kind
+        env:
+          # dl/latest can point to an alpha release; pin a stable one.
+          KIND_VERSION: v0.33.0
+        run: |
+          curl -sSfLo ./kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Install clusterctl
+        run: |
+          # Same Cluster API version as go.mod.
+          version=$(awk '$1 == "sigs.k8s.io/cluster-api" {print $2}' go.mod)
+          curl -sSfLo ./clusterctl "https://github.com/kubernetes-sigs/cluster-api/releases/download/${version}/clusterctl-linux-amd64"
+          chmod +x ./clusterctl
+          sudo mv ./clusterctl /usr/local/bin/clusterctl
+          clusterctl version
+
+      - name: Run the Cilium e2e test
+        env:
+          MODE: ${{ matrix.mode }}
+          CONTROL_PLANE: ${{ matrix.control-plane }}
+          # Avoid the GitHub API rate limit of clusterctl init.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: hack/e2e-cilium.sh

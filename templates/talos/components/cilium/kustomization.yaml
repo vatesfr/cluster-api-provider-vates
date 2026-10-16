@@ -1,0 +1,40 @@
+# Cilium CNI, kube-proxy kept (standard mode).
+#
+# Disables the Talos default CNI (flannel) on every node and lets the vates
+# provider install Cilium through a ClusterResourceSet as soon as the control
+# plane is initialized. kube-proxy stays enabled.
+#
+# Use it from an overlay (pick only one of the cilium components):
+#   components:
+#     - ../../components/cilium
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+  - target:
+      kind: TalosControlPlane
+    patch: |-
+      - op: add
+        path: /spec/controlPlaneConfig/controlplane/strategicPatches/-
+        value: |
+          cluster:
+            network:
+              cni:
+                name: none
+  - target:
+      kind: TalosConfigTemplate
+    patch: |-
+      - op: add
+        path: /spec/template/spec/strategicPatches/-
+        value: |
+          cluster:
+            network:
+              cni:
+                name: none
+  - target:
+      kind: XOCluster
+    patch: |-
+      - op: add
+        path: /spec/addons
+        value:
+          cni: cilium

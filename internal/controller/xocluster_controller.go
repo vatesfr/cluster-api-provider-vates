@@ -168,7 +168,7 @@ func (r *XOClusterReconciler) reconcileNormal(ctx context.Context, xoCluster *in
 
 	// Ensure CCM + CSI driver ConfigMaps and ClusterResourceSet exist for
 	// automatic deployment into workload clusters.
-	if err := r.reconcileAddons(ctx, xoCluster, cluster.Name, xoCreds); err != nil {
+	if err := r.reconcileAddons(ctx, xoCluster, cluster, xoCreds); err != nil {
 		logger.Error(err, "Failed to reconcile addon resources, will retry")
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
@@ -406,17 +406,97 @@ type csiManifestData struct {
 	ApiServerPort string
 }
 
-// cniCiliumManifest is the rendered Cilium CNI manifest applied via
-// ClusterResourceSet when spec.addons.cni == cniCilium.
+// cniCiliumManifestTemplate is the Cilium CNI manifest (Helm chart rendered
+// with devices=eth0 and hubble.enabled=false), applied via ClusterResourceSet
+// when spec.addons.cni == cniCilium. It is rendered with ciliumManifestData.
 //
 //go:embed cni-cilium.yaml
-var cniCiliumManifest string
+var cniCiliumManifestTemplate string
 
 // CNI names used in spec.addons.cni.
 const (
 	cniCilium = "cilium"
 	cniNone   = "none"
 )
+
+// Talos KubePrism: the node-local, highly available API server endpoint that
+// Talos runs on every node (enabled by default since Talos 1.6). It works
+// before any CNI or kube-proxy is up, which kube-proxy replacement requires.
+const (
+	kubePrismHost = "localhost"
+	kubePrismPort = 7445
+)
+
+// talosControlPlaneKind is the control plane kind of the Talos control plane
+// provider (CACPPT), used to detect Talos workload clusters.
+const talosControlPlaneKind = "TalosControlPlane"
+
+// ciliumManifestData holds the template values for the Cilium manifest.
+type ciliumManifestData struct {
+	// Talos renders the Talos Linux values of the Cilium chart: no SYS_MODULE
+	// capability (Talos forbids loading kernel modules from workloads), the
+	// cgroupv2 hierarchy already mounted by Talos at /sys/fs/cgroup, and the
+	// Kubernetes IPAM mode (node podCIDRs allocated from the cluster pods CIDR).
+	Talos      bool
+	CgroupRoot string
+
+	// KubeProxyReplacement renders kubeProxyReplacement=true and makes the
+	// agent and operator reach the API server through K8sServiceHost and
+	// K8sServicePort (k8sServiceHost / k8sServicePort chart values).
+	KubeProxyReplacement bool
+	K8sServiceHost       string
+	K8sServicePort       int32
+}
+
+// isTalosCluster reports whether the cluster is managed by the Talos control
+// plane provider.
+func isTalosCluster(cluster *clusterv1.Cluster) bool {
+	return cluster.Spec.ControlPlaneRef.Kind == talosControlPlaneKind
+}
+
+// ciliumData returns the Cilium manifest values for a cluster. With
+// kube-proxy replacement, the API server endpoint defaults to KubePrism on
+// Talos and to the control plane endpoint otherwise, unless set in the spec.
+func ciliumData(xoCluster *infrastructurev1beta2.XOCluster, cilium *infrastructurev1beta2.CiliumSpec, talos bool) (ciliumManifestData, error) {
+	data := ciliumManifestData{Talos: talos, CgroupRoot: "/run/cilium/cgroupv2"}
+	if talos {
+		data.CgroupRoot = "/sys/fs/cgroup"
+	}
+	if cilium == nil || cilium.KubeProxyReplacement == nil || !*cilium.KubeProxyReplacement {
+		return data, nil
+	}
+	data.KubeProxyReplacement = true
+
+	switch {
+	case cilium.K8sServiceHost != "" && cilium.K8sServicePort != 0:
+		data.K8sServiceHost, data.K8sServicePort = cilium.K8sServiceHost, cilium.K8sServicePort
+	case talos:
+		data.K8sServiceHost, data.K8sServicePort = kubePrismHost, kubePrismPort
+	default:
+		ep := xoCluster.Spec.ControlPlaneEndpoint
+		if ep == nil || ep.Host == "" {
+			ep = xoCluster.Status.ControlPlaneEndpoint
+		}
+		if ep == nil || ep.Host == "" || ep.Port == 0 {
+			return data, fmt.Errorf("cilium kube-proxy replacement requires an API server endpoint: set spec.addons.cilium.k8sServiceHost/k8sServicePort or spec.controlPlaneEndpoint")
+		}
+		data.K8sServiceHost, data.K8sServicePort = ep.Host, ep.Port
+	}
+	return data, nil
+}
+
+// renderCiliumManifest renders the Cilium manifest template.
+func renderCiliumManifest(data ciliumManifestData) (string, error) {
+	tmpl, err := template.New("cilium").Parse(cniCiliumManifestTemplate)
+	if err != nil {
+		return "", fmt.Errorf("parse Cilium template: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("execute Cilium template: %w", err)
+	}
+	return buf.String(), nil
+}
 
 // defaultAddons returns the effective addon selection, filling defaults for
 // unset fields (CCM/CSI enabled, no CNI).
@@ -500,8 +580,13 @@ func (r *XOClusterReconciler) removeAddon(ctx context.Context, namespace, cluste
 // reconcileAddons creates per-cluster ConfigMaps and one ClusterResourceSet per
 // enabled addon (CCM, CSI, CNI), targeting only this cluster. Addons are
 // optional and driven by the XOCluster spec.addons field.
-func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *infrastructurev1beta2.XOCluster, clusterName string, xoCreds *xok8scommon.XoConfig) error {
+//
+// The ClusterResourceSets are applied from the management cluster through the
+// workload cluster API endpoint as soon as its control plane is initialized,
+// so the CNI is installed without any in-cluster networking.
+func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *infrastructurev1beta2.XOCluster, cluster *clusterv1.Cluster, xoCreds *xok8scommon.XoConfig) error {
 	addons := defaultAddons(xoCluster.Spec.Addons)
+	clusterName := cluster.Name
 
 	// -----------------------------------------------------------------------
 	// CCM (Xen Orchestra cloud-controller-manager)
@@ -583,7 +668,15 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *in
 	cniCMName := "cni-manifests-" + clusterName
 	switch *addons.CNI {
 	case cniCilium:
-		if err := r.ensureAddon(ctx, xoCluster.Namespace, clusterName, "cni", "cni-deployment-"+clusterName, cniCMName, "ApplyOnce", cniCiliumManifest); err != nil {
+		data, err := ciliumData(xoCluster, addons.Cilium, isTalosCluster(cluster))
+		if err != nil {
+			return err
+		}
+		manifest, err := renderCiliumManifest(data)
+		if err != nil {
+			return err
+		}
+		if err := r.ensureAddon(ctx, xoCluster.Namespace, clusterName, "cni", "cni-deployment-"+clusterName, cniCMName, "ApplyOnce", manifest); err != nil {
 			return err
 		}
 	default: // "none"

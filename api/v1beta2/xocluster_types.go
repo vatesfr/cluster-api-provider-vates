@@ -56,6 +56,7 @@ type XOClusterSpec struct {
 // AddonsSpec selects which addons the controller installs in the workload
 // cluster via ClusterResourceSet. Each addon is optional and independently
 // controllable.
+// +kubebuilder:validation:XValidation:rule="!(has(self.cilium) && has(self.cilium.kubeProxyReplacement) && self.cilium.kubeProxyReplacement) || (has(self.cni) && self.cni == 'cilium')",message="cilium.kubeProxyReplacement requires cni to be cilium"
 type AddonsSpec struct {
 	// CCM installs the Xen Orchestra cloud-controller-manager (node addresses,
 	// service load balancers). Defaults to true.
@@ -75,6 +76,11 @@ type AddonsSpec struct {
 	// +kubebuilder:validation:Enum=none;cilium
 	CNI *string `json:"cni,omitempty"`
 
+	// Cilium configures the Cilium CNI installed when cni is "cilium". When
+	// nil, Cilium runs alongside kube-proxy.
+	// +optional
+	Cilium *CiliumSpec `json:"cilium,omitempty"`
+
 	// NodeOutOfService configures the CCM cloud-node-out-of-service controller
 	// (Non-Graceful Node Shutdown). When enabled, the CCM applies the
 	// node.kubernetes.io/out-of-service taint to nodes whose Xen Orchestra VM is
@@ -83,6 +89,41 @@ type AddonsSpec struct {
 	// timer. When nil, the controller is enabled with the CCM defaults.
 	// +optional
 	NodeOutOfService *NodeOutOfServiceSpec `json:"nodeOutOfService,omitempty"`
+}
+
+// CiliumSpec configures the Cilium CNI addon.
+//
+// With kube-proxy replacement, kube-proxy must not be deployed in the workload
+// cluster: on Talos set cluster.proxy.disabled to true (together with
+// cluster.network.cni.name: none) in the machine config of every node. The
+// Cilium manifest is applied once (ClusterResourceSet ApplyOnce strategy), so
+// changing these fields does not reconfigure an already provisioned cluster.
+// +kubebuilder:validation:XValidation:rule="has(self.k8sServiceHost) == has(self.k8sServicePort)",message="k8sServiceHost and k8sServicePort must be set together"
+// +kubebuilder:validation:XValidation:rule="!has(self.k8sServiceHost) || (has(self.kubeProxyReplacement) && self.kubeProxyReplacement)",message="k8sServiceHost and k8sServicePort require kubeProxyReplacement"
+type CiliumSpec struct {
+	// KubeProxyReplacement makes Cilium fully replace kube-proxy (Services,
+	// NodePorts, ...). The Cilium agent and operator then reach the API server
+	// directly through k8sServiceHost:k8sServicePort instead of the kubernetes
+	// Service, which is not routed until Cilium is running. Defaults to false.
+	// +optional
+	// +kubebuilder:default=false
+	KubeProxyReplacement *bool `json:"kubeProxyReplacement,omitempty"`
+
+	// K8sServiceHost is the API server host used by Cilium when
+	// kubeProxyReplacement is enabled. It must be reachable from every node
+	// without a CNI. Defaults to "localhost" (Talos KubePrism) on Talos
+	// clusters and to the control plane endpoint host otherwise.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	K8sServiceHost string `json:"k8sServiceHost,omitempty"`
+
+	// K8sServicePort is the API server port used with K8sServiceHost.
+	// Defaults to 7445 (Talos KubePrism) on Talos clusters and to the control
+	// plane endpoint port otherwise.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	K8sServicePort int32 `json:"k8sServicePort,omitempty"`
 }
 
 // NodeOutOfServiceSpec configures the CCM out-of-service controller

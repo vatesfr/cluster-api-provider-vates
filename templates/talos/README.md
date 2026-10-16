@@ -15,8 +15,9 @@ talos/
 ├── base/                 # Community templates — placeholders, no resource IDs
 │   ├── machinetemplates/ # XOMachineTemplate (control plane / worker)
 │   ├── example-cluster/  # Cluster scaffold + MachineHealthChecks
-│   ├── clusterctl/       # clusterctl-compatible template (distribution)
+│   ├── clusterctl/       # clusterctl-compatible templates (distribution)
 │   └── kustomization.yaml
+├── components/           # Optional kustomize components (Cilium CNI modes)
 └── overlays/             # Per-environment values (git-ignored, not distributed)
     └── <your-env>/       # Your environment — create one, see "Create an overlay"
 ```
@@ -325,6 +326,117 @@ Retrieve the `talosconfig` once the control plane is up:
 ```bash
 kubectl get talosconfig -n default -o yaml -o jsonpath='{.status.talosConfig}'
 ```
+
+## CNI: Cilium
+
+By default the templates keep the Talos default CNI (flannel) and kube-proxy.
+The vates provider can instead install [Cilium](https://cilium.io/) (1.16) in
+one of two modes:
+
+| Mode | Talos machine config (all nodes) | `XOCluster.spec.addons` |
+|---|---|---|
+| **Standard** — Cilium as CNI, kube-proxy kept | `cluster.network.cni.name: none` | `cni: cilium` |
+| **Kube-proxy replacement** — Cilium replaces kube-proxy | `cluster.network.cni.name: none` and `cluster.proxy.disabled: true` | `cni: cilium` and `cilium.kubeProxyReplacement: true` |
+
+The Talos side and the `XOCluster` side must agree: the provider does not read
+the Talos machine config. The kustomize components and the clusterctl flavor
+below set both sides together.
+
+### How Cilium is installed
+
+The `XOCluster` reconciler renders the Cilium manifest and stores it in a
+`ClusterResourceSet` (`cni-deployment-<cluster>`, strategy `ApplyOnce`). Cluster
+API applies it from the management cluster through the control plane endpoint
+as soon as the control plane is initialized, so no CNI, kube-proxy, FluxCD or
+any other in-cluster component is needed beforehand:
+
+1. CABPT/CACPPT generate the machine configs with the patches above: Talos
+   deploys neither flannel nor (in replacement mode) kube-proxy.
+2. The first control plane boots; its API server runs on the host network and
+   is reachable through the VIP.
+3. Cluster API applies the Cilium `ClusterResourceSet` (and the CCM/CSI ones).
+4. The Cilium agent and operator run on the host network and tolerate the
+   not-ready taints, so they start on nodes without a CNI and reach the API
+   server directly (see below). Nodes become `Ready` once the agent is up.
+5. The Xen Orchestra CCM (host network) sets the node `providerID`; in
+   replacement mode it reaches the API server through the `kubernetes` Service
+   once Cilium routes it.
+
+On Talos, the provider detects the cluster through its `TalosControlPlane` and
+renders the Talos values from the
+[Talos Cilium guide](https://docs.siderolabs.com/kubernetes-guides/cni/deploying-cilium):
+no `SYS_MODULE` capability (Talos does not let workloads load kernel modules),
+the cgroup v2 hierarchy mounted by Talos at `/sys/fs/cgroup`, and
+`ipam.mode=kubernetes` (pod CIDRs taken from the `Cluster` pods CIDR).
+
+### API server endpoint (kube-proxy replacement)
+
+Without kube-proxy, the `kubernetes` Service ClusterIP is only routed once
+Cilium runs, so Cilium itself must reach the API server directly
+(`k8sServiceHost` / `k8sServicePort` Helm values). On Talos the provider uses
+**KubePrism**, `localhost:7445`: a load balancer to all the control plane
+nodes that Talos runs on every node, enabled by default since Talos 1.6. Unlike
+the control plane VIP, it is local to each node and does not depend on which
+control plane node holds the VIP. Do not disable
+`machine.features.kubePrism`.
+
+To use another endpoint, set both fields:
+
+```yaml
+spec:
+  addons:
+    cni: cilium
+    cilium:
+      kubeProxyReplacement: true
+      k8sServiceHost: <host>
+      k8sServicePort: <port>
+```
+
+The API rejects `kubeProxyReplacement: true` without `cni: cilium`, a host
+without a port (and vice versa), and an endpoint without
+`kubeProxyReplacement: true`.
+
+### Enable it with an overlay
+
+Add one of the components to your overlay `kustomization.yaml` (only one):
+
+```yaml
+resources:
+  - ../../base
+
+components:
+  - ../../components/cilium                          # standard mode
+  # - ../../components/cilium-kube-proxy-replacement # kube-proxy replacement
+```
+
+The components append a strategic patch to the `TalosControlPlane` and the
+`TalosConfigTemplate`, and set `spec.addons` on the `XOCluster`. If your overlay
+also patches `spec.addons` of the `XOCluster` (e.g. to disable the CSI), set
+the CNI fields in that patch too.
+
+### Enable it with clusterctl
+
+Use the `cluster-template-cilium.yaml` flavor; `CILIUM_KUBE_PROXY_REPLACEMENT`
+drives both the Talos `cluster.proxy.disabled` and the Cilium mode:
+
+```bash
+export CILIUM_KUBE_PROXY_REPLACEMENT=true   # default: false (standard mode)
+
+clusterctl generate cluster my-cluster \
+  --from templates/talos/base/clusterctl/cluster-template-cilium.yaml \
+  --kubernetes-version v1.36.1 \
+  --control-plane-machine-count 3 --worker-machine-count 2 \
+  | kubectl apply -f -
+```
+
+### Limitations
+
+- The mode is chosen at cluster creation. The Cilium manifest is applied once
+  (`ApplyOnce`), so changing `spec.addons.cilium` afterwards does not
+  reconfigure a running cluster, and switching an existing cluster between
+  modes also requires rolling the Talos machine config.
+- Only the bundled Cilium settings are available (VXLAN tunnel, `eth0`, Hubble
+  disabled). For a customized Cilium, keep `cni: none` and install it yourself.
 
 ## Self-healing
 
