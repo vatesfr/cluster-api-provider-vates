@@ -38,6 +38,10 @@ notes/
 # Local environment overlays (real XO resource UUIDs — not for distribution)
 templates/*/overlays/
 
+# The Packer build script is part of the template, not a stray local script
+!templates/kubeadm/packer/scripts/
+!templates/kubeadm/packer/scripts/**
+
 # Documentation build output and local tooling
 site/
 .venv/
