@@ -23,19 +23,6 @@ spec:
 
 Leaving `spec.bootstrap` unset is the same as `format: passthrough`.
 
-### The config drive, for a pass-through payload
-
-A pass-through payload is read by the guest platform, not by cloud-init. Talos'
-`nocloud` datasource reads the config drive **at boot, before it applies the
-machine configuration**: `meta-data`, `network-config`, then `user-data`. The
-provider therefore always writes a `network-config` on that drive — a `#`
-comment placeholder when no guest network config is set — because a drive
-without it leaves the platform config step failing and the machine configuration
-is never loaded: the node stays in `STAGE: Booting` and nothing else happens.
-
-It is not something you declare, and not a network setting: it is what makes the
-pass-through payload reachable at all.
-
 ### What `cloudinit` unlocks
 
 Two enrichments, both driven by the **cluster** rather than by the machine:

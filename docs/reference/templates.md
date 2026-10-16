@@ -347,9 +347,11 @@ spec:
                   dhcp: true
                   vip:
                     ip: <your-cp-vip>
-            kubelet:
-              extraArgs:
-                cloud-provider: external
+        - |
+          apiVersion: v1alpha1
+          kind: KubeletConfig
+          extraArgs:
+            cloud-provider: external
 ```
 
 `patch-xocluster.yaml` — the cluster's control plane endpoint:

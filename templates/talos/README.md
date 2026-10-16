@@ -238,16 +238,20 @@ spec:
                   dhcp: true
                   vip:
                     ip: <your-cp-vip>
-            kubelet:
-              extraArgs:
-                cloud-provider: external
+        - |
+          apiVersion: v1alpha1
+          kind: KubeletConfig
+          extraArgs:
+            cloud-provider: external
 ```
 
-The kubelet setting goes **inline**, under `machine.kubelet`. Do not move it to a
-standalone `KubeletConfig` document: Talos v1.13.9 rejects the whole machine
-configuration with `"KubeletConfig" "v1alpha1": not registered`, and the node
-never leaves the boot stage. CABPT merges the patch into the configuration it
-generates, so the inline form is what the node accepts.
+The kubelet lives in its own document since Talos 1.14. Patching
+`machine.kubelet` here is rejected by Talos at boot with
+`kubelet config is already set in v1alpha1 config (.machine.kubelet)`, and the
+node stops before starting any service. On Talos 1.13.x the opposite holds: the
+standalone document is refused (`"KubeletConfig" "v1alpha1": not registered`) and
+the setting must go inline, under `machine.kubelet`. The image and the patch
+shape have to agree — see the prerequisites page for the version matrix.
 
 `patch-xocluster.yaml` — the cluster's control plane endpoint (**replace the
 VIP and subnet with yours**):
@@ -458,7 +462,7 @@ The base templates apply the following `strategicPatches`:
 |---|---|
 | `machine.time.servers` | Use `time.cloudflare.com` / `time.google.com` instead of the default NTP server; some servers (e.g. `pool.ntp.org`) answer "kiss of death" on some networks |
 | `machine.network.interfaces[].vip` | Talos native shared IP (control plane VIP) — **not** kube-vip |
-| `machine.kubelet.extraArgs.cloud-provider: external` | Offload node initialization to the Xen Orchestra CCM, which sets the `providerID` required by CAPI |
+| `KubeletConfig.extraArgs.cloud-provider: external` | Offload node initialization to the Xen Orchestra CCM, which sets the `providerID` required by CAPI |
 
 > `TalosControlPlane.spec.controlPlaneConfig.controlplane.talosVersion` **must**
 > be set to the Talos version of the image. Without it, CABPT generates a config
