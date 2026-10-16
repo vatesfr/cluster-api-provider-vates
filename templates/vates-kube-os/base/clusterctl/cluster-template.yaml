@@ -1,0 +1,288 @@
+# EXPERIMENTAL — the Vates Kube OS flavour.
+#
+# Kept in this repository because it is the only way to reproduce the node-OS
+# flow end to end, and therefore to debug it: without a committed template the
+# only copy lives in someone's local notes. It is *not* part of the released,
+# tested set — the kubeadm and Talos flavours are. All three providers it needs
+# (CAVBP for bootstrap, CAVCPP for the control plane, vates-capi for
+# infrastructure) are experimental themselves.
+#
+# The Vates Kube OS flavour. Nodes are Vates Kube OS VMs: the infrastructure
+# provider (vates-capi) creates the VM and attaches the config drive, the Vates
+# bootstrap provider (CAVBP) writes the vates-node.yaml document the node reads
+# at first boot, and the Vates control plane provider (CAVCPP) owns the cluster
+# certificate authority and stamps the control plane Machines.
+#
+# Required variables (export in environment):
+#   CP_VIP            - control plane VIP, served by kube-vip (e.g. 10.30.139.30)
+#   CP_SUBNET         - subnet mask of the VIP (e.g. 16)
+#   VM_NAME_PREFIX    - prefix for the VM names in Xen Orchestra (e.g. my-cluster)
+#   XO_TEMPLATE_UUID  - UUID of the Vates Kube OS VM template
+#   XO_POOL_UUID      - UUID of your Xen Orchestra pool
+#   XO_NETWORK_UUID   - UUID of your Xen Orchestra network
+#   IP_POOL_RANGE     - node IP range for the InClusterIPPool (e.g. 10.30.139.200-10.30.139.220)
+#   IP_POOL_GATEWAY   - gateway handed to the nodes (e.g. 10.30.0.1)
+#
+# Node addresses come from the in-cluster IPAM provider (capi-ipam-in-cluster):
+# the InClusterIPPool below is drawn by every Machine through
+# networkConfig.addressesFromPools. This requires the provider to be installed:
+#   clusterctl init --infrastructure vates --ipam in-cluster
+#
+# Clusterctl built-in variables (flags or environment):
+#   KUBERNETES_VERSION          - via --kubernetes-version or env
+#   CLUSTER_NAME                - defaults to the name argument
+#   NAMESPACE                   - defaults to the current namespace
+#   CONTROL_PLANE_MACHINE_COUNT - via --control-plane-machine-count
+#   WORKER_MACHINE_COUNT        - via --worker-machine-count
+#
+# Optional (defaults shown):
+#   CP_PORT (6443), POD_CIDR (10.244.0.0/16), SERVICE_CIDR (10.96.0.0/12),
+#   DNS_DOMAIN (cluster.local)
+#
+# The pod network is flannel, installed by the node itself (cni.plugin below),
+# which is why the XOCluster asks for no CNI: the infrastructure provider's
+# ClusterResourceSet CNI is cilium, and the two would fight. Set cni.plugin to
+# "none" and XOCluster.addons.cni to "cilium" to use cilium instead.
+#
+# To match the 3 control planes a highly available cluster needs:
+#   --control-plane-machine-count 3
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: Cluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - ${POD_CIDR:-10.244.0.0/16}
+    services:
+      cidrBlocks:
+        - ${SERVICE_CIDR:-10.96.0.0/12}
+    serviceDomain: ${DNS_DOMAIN:-cluster.local}
+  controlPlaneEndpoint:
+    host: ${CP_VIP}
+    port: ${CP_PORT:-6443}
+  controlPlaneRef:
+    apiGroup: controlplane.cluster.x-k8s.io
+    kind: VatesControlPlane
+    name: ${CLUSTER_NAME}
+  infrastructureRef:
+    apiGroup: vates.infrastructure.cluster.x-k8s.io
+    kind: XOCluster
+    name: ${CLUSTER_NAME}
+---
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOCluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  controlPlaneEndpoint:
+    host: ${CP_VIP}
+    port: ${CP_PORT:-6443}
+    subnet: ${CP_SUBNET}
+  addons:
+    ccm: true
+    csi: true
+    # The node installs flannel itself (cni.plugin: flannel below).
+    cni: none
+---
+# Node addresses are handed out by the capi-ipam-in-cluster provider. Every
+# Machine (control plane and worker) draws its address from this pool through
+# networkConfig.addressesFromPools below.
+apiVersion: ipam.cluster.x-k8s.io/v1alpha2
+kind: InClusterIPPool
+metadata:
+  name: ${CLUSTER_NAME}-pool
+  namespace: ${NAMESPACE}
+spec:
+  addresses:
+    - ${IP_POOL_RANGE}
+  gateway: ${IP_POOL_GATEWAY}
+  prefix: ${CP_SUBNET}
+---
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-cp
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      # The bootstrap payload is the vates-node.yaml document CAVBP produces.
+      # The infrastructure provider passes it through to the config drive
+      # untouched: it is neither cloud-init nor a kubeadm payload.
+      bootstrapProvider: vates
+      namePrefix: ${VM_NAME_PREFIX}-cp
+      templateID: ${XO_TEMPLATE_UUID}
+      poolID: ${XO_POOL_UUID}
+      resourceSet:
+        cpus: 2
+        memory: 4Gi
+        diskSize: 20Gi
+      networkConfig:
+        addressesFromPools:
+          - apiGroup: ipam.cluster.x-k8s.io
+            kind: InClusterIPPool
+            name: ${CLUSTER_NAME}-pool
+        networks:
+          - networkID: ${XO_NETWORK_UUID}
+---
+apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+kind: XOMachineTemplate
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      bootstrapProvider: vates
+      namePrefix: ${VM_NAME_PREFIX}-worker
+      templateID: ${XO_TEMPLATE_UUID}
+      poolID: ${XO_POOL_UUID}
+      resourceSet:
+        cpus: 2
+        memory: 4Gi
+        diskSize: 20Gi
+      networkConfig:
+        addressesFromPools:
+          - apiGroup: ipam.cluster.x-k8s.io
+            kind: InClusterIPPool
+            name: ${CLUSTER_NAME}-pool
+        networks:
+          - networkID: ${XO_NETWORK_UUID}
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1alpha1
+kind: VatesBootstrapConfigTemplate
+metadata:
+  name: ${CLUSTER_NAME}-cp
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      kubernetesVersion: ${KUBERNETES_VERSION}
+      cluster:
+        # Only a control plane owns the VIP.
+        vip:
+          address: ${CP_VIP}
+          interface: eth0
+      network:
+        iface: eth0
+        mode: dhcp
+      cni:
+        plugin: flannel
+        cidr: ${POD_CIDR:-10.244.0.0/16}
+      cloud:
+        provider: external
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1alpha1
+kind: VatesBootstrapConfigTemplate
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+spec:
+  template:
+    spec:
+      kubernetesVersion: ${KUBERNETES_VERSION}
+      network:
+        iface: eth0
+        mode: dhcp
+      cni:
+        plugin: flannel
+        cidr: ${POD_CIDR:-10.244.0.0/16}
+      cloud:
+        provider: external
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1alpha1
+kind: VatesControlPlane
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  version: ${KUBERNETES_VERSION}
+  replicas: ${CONTROL_PLANE_MACHINE_COUNT}
+  machineTemplate:
+    infrastructureRef:
+      apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
+      kind: XOMachineTemplate
+      name: ${CLUSTER_NAME}-cp
+    bootstrapConfigTemplateRef:
+      apiVersion: bootstrap.cluster.x-k8s.io/v1alpha1
+      kind: VatesBootstrapConfigTemplate
+      name: ${CLUSTER_NAME}-cp
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineDeployment
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  replicas: ${WORKER_MACHINE_COUNT}
+  template:
+    spec:
+      clusterName: ${CLUSTER_NAME}
+      version: ${KUBERNETES_VERSION}
+      bootstrap:
+        configRef:
+          apiGroup: bootstrap.cluster.x-k8s.io
+          kind: VatesBootstrapConfigTemplate
+          name: ${CLUSTER_NAME}-worker
+      infrastructureRef:
+        apiGroup: vates.infrastructure.cluster.x-k8s.io
+        kind: XOMachineTemplate
+        name: ${CLUSTER_NAME}-worker
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: ${CLUSTER_NAME}-cp
+  namespace: ${NAMESPACE}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  checks:
+    nodeStartupTimeoutSeconds: 600
+    unhealthyNodeConditions:
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/control-plane: ""
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 1
+---
+apiVersion: cluster.x-k8s.io/v1beta2
+kind: MachineHealthCheck
+metadata:
+  name: ${CLUSTER_NAME}-worker
+  namespace: ${NAMESPACE}
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  checks:
+    nodeStartupTimeoutSeconds: 600
+    unhealthyNodeConditions:
+      - type: Ready
+        status: "False"
+        timeoutSeconds: 300
+      - type: Ready
+        status: Unknown
+        timeoutSeconds: 300
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/deployment-name: ${CLUSTER_NAME}-worker
+  remediation:
+    triggerIf:
+      unhealthyLessThanOrEqualTo: 1

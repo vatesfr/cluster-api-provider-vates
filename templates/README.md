@@ -58,11 +58,15 @@ templates/
 │   ├── overlays/                        # per-environment values (not distributed)
 │   │   └── <your-env>/                  # create one per environment
 │   └── kustomization.yaml
+├── vates-kube-os/                       # Vates Kube OS flow (experimental)
+│   ├── base/                            # community templates — placeholders
+│   │   └── clusterctl/                  # clusterctl-compatible template
+│   └── README.md
 └── README.md
 ```
 
-Two bootstrap flows are supported, one per top-level directory. Each flow follows
-a `base/` + `overlays/` layout:
+Three bootstrap flows are supported, one per top-level directory. Each flow
+follows a `base/` + `overlays/` layout:
 
 - **kubeadm** (default): `kubeadm/base/clusterclass/` + `kubeadm/base/machinetemplates/` +
   `kubeadm/base/example-cluster/` with `KubeadmControlPlane` and cloud-init. See below.
@@ -72,6 +76,13 @@ a `base/` + `overlays/` layout:
   (`machinetemplates/`, `example-cluster/`, `clusterctl/`) but has no
   `clusterclass/`: the Talos control plane provider does not support
   ClusterClass / managed topology yet, so these are flat templates.
+- **Vates Kube OS** (experimental): `vates-kube-os/base/clusterctl/` with
+  `VatesControlPlane` + `VatesBootstrapConfigTemplate` on the immutable Vates
+  Kube OS image. The node reads a single `vates-node.yaml` document from the
+  config drive, so the payload is neither cloud-init nor a machine
+  configuration. It is committed here to keep the node-OS flow reproducible and
+  debuggable — without it, the only copy lives in someone's local notes — and
+  it is not part of the released, tested set.
 
 > The Talos flow also needs the Talos RBAC binding (it is not part of the
 > default install): `kubectl apply -k config/rbac/talos`. See [talos/README.md](talos/README.md).
