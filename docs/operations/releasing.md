@@ -26,8 +26,8 @@ providers:
 From then on they install and generate clusters without cloning anything:
 
 ```bash
-clusterctl init --infrastructure vates:v1.1.0-rc4
-clusterctl generate cluster my-cluster --infrastructure vates:v1.1.0-rc4 \
+clusterctl init --infrastructure vates
+clusterctl generate cluster my-cluster --infrastructure vates \
   --control-plane-machine-count 3 --worker-machine-count 2
 ```
 
@@ -65,9 +65,11 @@ Two rules follow from that file:
 
 ### 1. Pick the version
 
-Use a valid semantic version as the git tag. The current reference release is
-`v1.1.0-rc4`. Pre-release tags (anything containing a `-`) are published as
-GitHub prereleases by the automation.
+Use a valid semantic version as the git tag; this page writes it `<version>`
+(for example `v1.2.0`). Tags containing a `-` (release candidates, betas) are
+published as GitHub **prereleases** by the automation, so they are not the
+repository's *latest* release — and `clusterctl` resolves the latest release
+when no version is given.
 
 ### 2. Build and push the controller image
 
@@ -75,7 +77,7 @@ The image referenced by `infrastructure-components.yaml` must be pullable by the
 management cluster:
 
 ```bash
-export IMG=ghcr.io/vatesfr/cluster-api-provider-vates:v1.1.0-rc4
+export IMG=ghcr.io/vatesfr/cluster-api-provider-vates:<version>
 make docker-build docker-push IMG=$IMG
 ```
 
@@ -99,7 +101,7 @@ Tag the release, attach the three files from `dist/`, and let GitHub generate th
 notes:
 
 ```bash
-gh release create v1.1.0-rc4 --verify-tag --generate-notes \
+gh release create <version> --verify-tag --generate-notes \
   dist/infrastructure-components.yaml \
   dist/metadata.yaml \
   dist/cluster-template.yaml
@@ -147,7 +149,7 @@ make -f Makefile.dev dev-overrides
 ```
 
 That regenerates `dist/` and copies the three assets into
-`~/.config/cluster-api/overrides/infrastructure-vates/v1.1.0-rc4/`. `dist/`
+`~/.config/cluster-api/overrides/infrastructure-vates/<version>/`. `dist/`
 itself cannot be pointed at directly: a `file://` URL needs a
 `{basepath}/{provider-name}/{version}/` layout for version resolution. See
 [Development](../contributing/development.md) for the rest of the local loop.
@@ -159,7 +161,7 @@ itself cannot be pointed at directly: a `file://` URL needs a
     `clusterctl` detects available provider versions through `proxy.golang.org`.
     While the module is not published there, detection may fail. Work around it
     by setting `GOPROXY=off` or `GOPROXY=direct`, or by pinning the version
-    explicitly (`vates:v1.1.0-rc4`) on the command line.
+    explicitly (`vates:<version>`) on the command line.
 
 !!! note "Not in the built-in provider list yet"
 

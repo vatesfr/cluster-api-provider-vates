@@ -58,11 +58,12 @@ providers:
 ### 3. Install it
 
 ```bash
-clusterctl init --infrastructure vates:v1.1.0-rc4
+clusterctl init --infrastructure vates
 ```
 
-Use the version you actually want; `clusterctl` reports the available ones if
-the tag is unknown.
+Without a version, `clusterctl` installs the **latest** release. Append
+`:vX.Y.Z` to pin one; `clusterctl` reports the available versions if the tag is
+unknown.
 
 ## Option B — a single `kubectl apply`
 

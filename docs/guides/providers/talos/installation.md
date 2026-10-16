@@ -23,7 +23,7 @@ vates-capi.
 If you have not installed vates-capi yet, do it in the same command:
 
 ```bash
-clusterctl init --bootstrap talos --control-plane talos --infrastructure vates:v1.1.0-rc4
+clusterctl init --bootstrap talos --control-plane talos --infrastructure vates
 ```
 
 `clusterctl` needs to know where the vates provider lives; see

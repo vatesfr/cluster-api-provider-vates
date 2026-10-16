@@ -95,7 +95,7 @@ spec: Forbidden: can be set only if the ClusterTopology feature flag is enabled
 ```bash
 export CLUSTER_TOPOLOGY=true
 clusterctl init --bootstrap kubeadm --control-plane kubeadm \
-  --infrastructure vates:v1.1.0-rc4
+  --infrastructure vates
 ```
 
 The gate must be on for the CAPI core, control plane, and bootstrap controllers:

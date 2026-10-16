@@ -24,7 +24,7 @@ in-place image and CRD update, not a migration. No VM is touched.
 With `clusterctl`:
 
 ```bash
-clusterctl upgrade apply --infrastructure vates:v1.1.0-rc4
+clusterctl upgrade apply --infrastructure vates
 ```
 
 With the single bundle:

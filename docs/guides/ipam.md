@@ -74,7 +74,7 @@ If you are still installing the rest of the stack, do it in the same command:
 ```bash
 clusterctl init \
   --bootstrap kubeadm --control-plane kubeadm \
-  --infrastructure vates:v1.1.0-rc4 \
+  --infrastructure vates \
   --ipam in-cluster
 ```
 

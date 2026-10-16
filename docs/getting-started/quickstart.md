@@ -49,7 +49,7 @@ deployment.
     `cluster-template.yaml`, shipped in `dist/`. That is the quickest form:
 
     ```bash
-    clusterctl generate cluster my-cluster --infrastructure vates:v1.1.0-rc4 \
+    clusterctl generate cluster my-cluster --infrastructure vates \
       --control-plane-machine-count 3 --worker-machine-count 2 \
       | kubectl apply -f -
     ```

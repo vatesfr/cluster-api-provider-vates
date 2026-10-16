@@ -136,7 +136,7 @@ header at the top of each template for the full list.
     `almalinux-fromscratch` variant:
 
     ```bash
-    clusterctl generate cluster my-cluster --infrastructure vates:v1.1.0-rc4 \
+    clusterctl generate cluster my-cluster --infrastructure vates \
       --control-plane-machine-count 3 --worker-machine-count 2 \
       | kubectl apply -f -
     ```
@@ -176,7 +176,7 @@ per-environment overrides and is meant for local testing only. Never edit
 
     ```bash
     export CLUSTER_TOPOLOGY=true
-    clusterctl init --bootstrap kubeadm --control-plane kubeadm --infrastructure vates:v1.1.0-rc4
+    clusterctl init --bootstrap kubeadm --control-plane kubeadm --infrastructure vates
     ```
 
     The flat `clusterctl generate` flow does not need the gate.

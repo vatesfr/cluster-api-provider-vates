@@ -73,9 +73,9 @@ Then install all three together:
 
 ```shell
 clusterctl init \
-  --bootstrap vates:v0.1.0 \
-  --control-plane vates:v0.1.0 \
-  --infrastructure vates:v1.1.0-rc4
+  --bootstrap vates \
+  --control-plane vates \
+  --infrastructure vates
 ```
 
 Installing the control plane provider adds the cluster CA it owns; the bootstrap
