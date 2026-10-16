@@ -49,6 +49,13 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt",year=$(YEAR) paths="./..."
 
+## Cilium chart version of the CNI addon (internal/controller/cni-cilium.yaml)
+CILIUM_VERSION ?= 1.20.2
+
+.PHONY: cilium-manifest
+cilium-manifest: ## Regenerate the Cilium CNI addon template from the Cilium Helm chart (requires helm).
+	go run ./hack/cilium-manifest -version $(CILIUM_VERSION) -out internal/controller/cni-cilium.yaml
+
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...

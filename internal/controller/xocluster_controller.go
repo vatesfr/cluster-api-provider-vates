@@ -406,9 +406,10 @@ type csiManifestData struct {
 	ApiServerPort string
 }
 
-// cniCiliumManifestTemplate is the Cilium CNI manifest (Helm chart rendered
-// with devices=eth0 and hubble.enabled=false), applied via ClusterResourceSet
-// when spec.addons.cni == cniCilium. It is rendered with ciliumManifestData.
+// cniCiliumManifestTemplate is the Cilium CNI manifest, applied via
+// ClusterResourceSet when spec.addons.cni == cniCilium. It is generated from
+// the Cilium Helm chart by hack/cilium-manifest (make cilium-manifest) and
+// rendered with ciliumManifestData.
 //
 //go:embed cni-cilium.yaml
 var cniCiliumManifestTemplate string
@@ -437,8 +438,7 @@ type ciliumManifestData struct {
 	// capability (Talos forbids loading kernel modules from workloads), the
 	// cgroupv2 hierarchy already mounted by Talos at /sys/fs/cgroup, and the
 	// Kubernetes IPAM mode (node podCIDRs allocated from the cluster pods CIDR).
-	Talos      bool
-	CgroupRoot string
+	Talos bool
 
 	// KubeProxyReplacement renders kubeProxyReplacement=true and makes the
 	// agent and operator reach the API server through K8sServiceHost and
@@ -458,10 +458,7 @@ func isTalosCluster(cluster *clusterv1.Cluster) bool {
 // kube-proxy replacement, the API server endpoint defaults to KubePrism on
 // Talos and to the control plane endpoint otherwise, unless set in the spec.
 func ciliumData(xoCluster *infrastructurev1beta2.XOCluster, cilium *infrastructurev1beta2.CiliumSpec, talos bool) (ciliumManifestData, error) {
-	data := ciliumManifestData{Talos: talos, CgroupRoot: "/run/cilium/cgroupv2"}
-	if talos {
-		data.CgroupRoot = "/sys/fs/cgroup"
-	}
+	data := ciliumManifestData{Talos: talos}
 	if cilium == nil || cilium.KubeProxyReplacement == nil || !*cilium.KubeProxyReplacement {
 		return data, nil
 	}

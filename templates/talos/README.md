@@ -330,7 +330,7 @@ kubectl get talosconfig -n default -o yaml -o jsonpath='{.status.talosConfig}'
 ## CNI: Cilium
 
 By default the templates keep the Talos default CNI (flannel) and kube-proxy.
-The vates provider can instead install [Cilium](https://cilium.io/) (1.16) in
+The vates provider can instead install [Cilium](https://cilium.io/) (1.20) in
 one of two modes:
 
 | Mode | Talos machine config (all nodes) | `XOCluster.spec.addons` |
@@ -437,6 +437,9 @@ clusterctl generate cluster my-cluster \
   modes also requires rolling the Talos machine config.
 - Only the bundled Cilium settings are available (VXLAN tunnel, `eth0`, Hubble
   disabled). For a customized Cilium, keep `cni: none` and install it yourself.
+- The Cilium version (1.20.2) comes with the provider release. Maintainers
+  bump it with `make cilium-manifest CILIUM_VERSION=<version>`, which
+  regenerates `internal/controller/cni-cilium.yaml` from the Helm chart.
 
 ## Self-healing
 

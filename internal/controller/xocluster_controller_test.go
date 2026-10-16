@@ -433,12 +433,11 @@ var _ = Describe("Cilium CNI addon", func() {
 	})
 
 	Context("standard mode (kube-proxy enabled)", func() {
-		It("keeps the previous manifest when no cilium settings are given", func() {
+		It("renders the standard values when no cilium settings are given", func() {
 			withCilium(nil)
 			yaml := ciliumYAML()
 
 			Expect(yaml).To(ContainSubstring(`kube-proxy-replacement: "false"`))
-			Expect(yaml).To(ContainSubstring(`enable-node-port: "false"`))
 			Expect(yaml).NotTo(ContainSubstring("KUBERNETES_SERVICE_HOST"))
 			Expect(yaml).To(ContainSubstring(`ipam: "cluster-pool"`))
 			Expect(yaml).To(ContainSubstring(`cgroup-root: "/run/cilium/cgroupv2"`))
@@ -480,7 +479,6 @@ var _ = Describe("Cilium CNI addon", func() {
 			yaml := ciliumYAML()
 
 			Expect(yaml).To(ContainSubstring(`kube-proxy-replacement: "true"`))
-			Expect(yaml).NotTo(ContainSubstring(`enable-node-port: "false"`))
 			// agent, config and clean-cilium-state containers, envoy and operator
 			Expect(strings.Count(yaml, apiEnv("localhost", "7445"))).To(Equal(5))
 			Expect(yaml).NotTo(ContainSubstring("SYS_MODULE"))
