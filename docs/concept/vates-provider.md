@@ -54,13 +54,14 @@ does not branch on "kubeadm" versus "Talos". Instead, each `XOMachine` /
 
 | `spec.bootstrap.format` | Effect |
 |---|---|
-| *(unset)* / `passthrough` | Pass the payload through untouched. |
+| *(unset)* / `passthrough` | Pass the payload through untouched, and label the config drive so the guest platform finds it. |
 | `cloudinit` | Treat it as cloud-init, which may be enriched: the XO user's SSH keys are merged in when `XOCluster.spec.injectSSHKeys` is on, and kube-vip is injected when the cluster sets `controlPlaneLB: kube-vip`. |
 
 Because the declaration describes *what the payload is*, not *who produced it*,
 supporting a brand-new bootstrap provider requires **no change to this
 controller**. You just declare it on the template. The Talos flow, for instance,
-needs no declaration at all: its configuration is passed through as-is.
+declares `format: passthrough`: its configuration is passed through as-is, and
+the config drive is labelled `cidata` so Talos' `nocloud` datasource reads it.
 
 ## Cluster-level settings: `XOCluster`
 

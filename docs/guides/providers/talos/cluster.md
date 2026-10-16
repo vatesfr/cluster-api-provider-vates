@@ -228,13 +228,15 @@ the components under `templates/talos/components/` or the
 ## The maintenance-mode trap
 
 A machine that boots, shows an address in XO, and then never joins is almost
-always stuck in Talos **maintenance mode** — the machine config was rejected.
-Two causes account for nearly all cases:
+always stuck **before it applies its machine configuration**: in Talos
+maintenance mode when the configuration was found and rejected, still in the
+boot stage when the configuration was never found at all.
 
 | Symptom | Cause |
 |---|---|
 | Node in maintenance, config rejected as unknown documents | `talosVersion` does not match the image's Talos version |
 | Node in maintenance, config drive not mounted | `viridian: true` on the XO template, or an image not built for `nocloud` |
+| Still in `STAGE: Booting`, `TYPE: unknown`, no config applied | The machine template does not declare `bootstrap.format: passthrough`, so the config drive is not labelled `cidata` and Talos never finds the machine config. Fixed in v1.1.0 — check the version you deploy |
 | No address reported in XO at all | The `siderolabs/xen-guest-agent` extension is missing from the image |
 | Nodes share an identity / fail to join | The template was booted before being cloned, or built from a booted image |
 
@@ -242,6 +244,13 @@ The first is the most common. CABPT generates a config for **its own default
 version** if `talosVersion` is unset; when that differs from the running image,
 the node rejects the config and stays in maintenance. Always set `talosVersion`
 to the image's exact version, and rebuild the image when you bump it.
+
+The `STAGE: Booting` row is a provider-side failure, not something you can fix
+in the cluster: the machine config was written to the config drive, but the
+drive was not labelled `cidata`, so Talos never looked at it. Declaring
+`bootstrap.format: passthrough` on the machine template is what tells the
+provider to label the drive — the templates in this repository do it, a template
+you wrote yourself may not.
 
 The rest are handled by the checks on the [prerequisites](prerequisites.md)
 page. If a machine is not coming up, work through that checklist before

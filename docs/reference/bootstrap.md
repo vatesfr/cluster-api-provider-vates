@@ -18,10 +18,28 @@ spec:
 
 | `format` | Effect on the payload |
 |---|---|
-| `passthrough` (default) | Delivered untouched. |
+| `passthrough` (default) | Delivered untouched, and the config drive is made discoverable to the guest platform (see below). |
 | `cloudinit` | Treated as a cloud-init document, which may be enriched — see below. |
 
 Leaving `spec.bootstrap` unset is the same as `format: passthrough`.
+
+## The config drive
+
+The payload is not sent to the VM over the network: it is written into the VM's
+**config drive**, which the guest platform reads at boot. How that drive is
+built differs by format, and a pass-through payload needs one extra thing.
+
+Xen Orchestra only labels the config drive **`cidata`** when a *network-config*
+is present on it. A cloud-init guest looks for its `user-data` and does not care
+about the label, but a pass-through payload is read by the guest platform — for
+Talos, the `nocloud` datasource — which finds its machine configuration **by
+that label**. Without it, the drive is written but stays invisible: the node
+boots, reports an address, and never applies a machine configuration at all.
+
+The provider therefore writes a `#` comment placeholder as the network-config
+whenever the format is pass-through and no guest network config is set. It is
+not something you declare: it follows from `format: passthrough`, and it is why
+that declaration must be explicit on every template that uses it.
 
 ### What `cloudinit` unlocks
 
@@ -62,13 +80,23 @@ provider does not go looking for it: it reads the secret named by the owning
 
     The Talos bootstrap provider emits a Talos machine configuration. It is not
     cloud-init, and nothing needs to be injected, so the template declares
-    nothing — the default `passthrough`:
+    **pass-through** — explicitly:
 
     ```yaml
-    # no bootstrap declaration: full pass-through
+    bootstrap:
+      format: passthrough
     ```
 
-    The provider delivers the machine config verbatim.
+    The provider delivers the machine config verbatim, and labels the config
+    drive so Talos' `nocloud` datasource finds it.
+
+!!! warning "Declare it, do not rely on the default"
+
+    An unset `spec.bootstrap` is *treated* as `passthrough`, so a template that
+    declares nothing happens to work. Do not count on it: the declaration is
+    what states the intent, and a template that does not declare its format
+    breaks silently the day the default changes. Every Talos template in this
+    repository declares `format: passthrough` for that reason.
 
 The controller runs the **same code** in both cases. The only difference is the
 declaration.
