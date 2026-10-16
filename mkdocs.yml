@@ -58,7 +58,7 @@ nav:
       - Cluster API in a nutshell: concept/cluster-api.md
       - The three providers: concept/providers.md
       - How they fit together: concept/how-they-link.md
-      - Where Vates fits: concept/vates-provider.md
+      - Where Vates CAPI fits: concept/vates-provider.md
   - Getting started:
       - getting-started/prerequisites.md
       - getting-started/installation.md
@@ -67,6 +67,7 @@ nav:
   - Guides:
       - Providers:
           - kubeadm: guides/providers/kubeadm.md
+          - Vates Kube OS: guides/providers/vates-kube-os.md
           - Talos:
               - guides/providers/talos/index.md
               - guides/providers/talos/prerequisites.md
@@ -74,7 +75,8 @@ nav:
               - guides/providers/talos/cluster.md
       - guides/clusterclass.md
       - guides/networking.md
-      - guides/kube-vip.md
+      - guides/ipam.md
+      - guides/vip.md
       - guides/ssh-keys.md
   - Reference:
       - reference/index.md

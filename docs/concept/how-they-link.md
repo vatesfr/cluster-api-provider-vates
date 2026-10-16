@@ -119,5 +119,5 @@ letting the object go.
 - **Templates** produce many machines; **owner references** keep them tidy.
 - Every provider simply **watches and reconciles** the objects it owns.
 
-With that model in hand, [Where Vates fits](vates-provider.md) is easy: it is the
+With that model in hand, [Where Vates CAPI fits](vates-provider.md) is easy: it is the
 infrastructure provider in this graph, and nothing more.

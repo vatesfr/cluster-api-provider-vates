@@ -5,7 +5,7 @@ copy — just the mental model you need before touching a management cluster.
 
 If you already know Cluster API well and only want the Vates specifics, you can
 skim the first three pages and jump to
-[Where Vates fits](vates-provider.md). If Cluster API is new to you, read them
+[Where Vates CAPI fits](vates-provider.md). If Cluster API is new to you, read them
 in order: each page builds on the previous one.
 
 1. [Cluster API in a nutshell](cluster-api.md) — the management cluster, the
@@ -14,7 +14,7 @@ in order: each page builds on the previous one.
    plane: what each one is responsible for.
 3. [How they fit together](how-they-link.md) — how the three providers cooperate
    through object references to build a cluster, without ever calling each other.
-4. [Where Vates fits](vates-provider.md) — the infrastructure provider for Xen
+4. [Where Vates CAPI fits](vates-provider.md) — the infrastructure provider for Xen
    Orchestra, and the custom resources it brings.
 
 !!! tip "One idea worth holding onto"

@@ -1,5 +1,11 @@
 # Installation
 
+!!! warning "Experimental"
+
+    The Vates providers — this infrastructure provider and the Vates
+    bootstrap / control plane providers — are **experimental**: no support, not
+    for production.
+
 You install two separate things: **Cluster API with its bootstrap and control
 plane providers**, and **vates-capi**. The first is generic; the second is the
 infrastructure provider this documentation is about.
@@ -52,7 +58,7 @@ providers:
 ### 3. Install it
 
 ```bash
-clusterctl init --infrastructure vates:v1.1.0-rc2
+clusterctl init --infrastructure vates:v1.1.0-rc4
 ```
 
 Use the version you actually want; `clusterctl` reports the available ones if

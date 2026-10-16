@@ -1,4 +1,4 @@
-# Where Vates fits
+# Where Vates CAPI fits
 
 vates-capi is the **infrastructure provider** for Xen Orchestra and XCP-ng. That
 is its entire job. It answers the *where* of every `Machine`: create the VM, put

@@ -3,15 +3,174 @@
 How to publish a release that users can install with `clusterctl`, without
 cloning the repository.
 
-!!! note "Draft — to be rewritten from `RELEASING.md`"
+## What a `clusterctl` release must contain
 
-    This page will absorb the existing `RELEASING.md`, rewritten in the same
-    didactic tone as the rest of the documentation. Planned contents:
+`clusterctl` fetches everything it needs from a **provider repository** — for
+this project, a GitHub release. A valid release carries three assets:
 
-    - What a `clusterctl` provider release must contain
-      (`infrastructure-components.yaml`, `metadata.yaml`, `cluster-template.yaml`)
-    - Building and pushing the controller image
-    - Generating the release artifacts
-    - Creating the GitHub release, and how the changelog is generated from
-      conventional-commit labels
-    - The contract version and `metadata.yaml`
+| Asset | Required | Used for |
+|---|---|---|
+| `infrastructure-components.yaml` | yes | `clusterctl init` — CRDs, RBAC and the controller. |
+| `metadata.yaml` | yes | Contract validation and version resolution. |
+| `cluster-template.yaml` | recommended | Default template for `clusterctl generate cluster`. |
+
+Users register the provider once in `~/.config/cluster-api/clusterctl.yaml`:
+
+```yaml
+providers:
+  - name: vates
+    url: https://github.com/vatesfr/cluster-api-provider-vates/releases/latest/infrastructure-components.yaml
+    type: InfrastructureProvider
+```
+
+From then on they install and generate clusters without cloning anything:
+
+```bash
+clusterctl init --infrastructure vates:v1.1.0-rc4
+clusterctl generate cluster my-cluster --infrastructure vates:v1.1.0-rc4 \
+  --control-plane-machine-count 3 --worker-machine-count 2
+```
+
+## The contract version and `metadata.yaml`
+
+Cluster API providers declare which **contract version** they implement, and
+`clusterctl` refuses to install a provider whose contract it does not understand.
+This provider implements `v1beta2`, and `metadata.yaml` records it per release
+series:
+
+```yaml
+apiVersion: clusterctl.cluster.x-k8s.io/v1alpha3
+kind: Metadata
+releaseSeries:
+  - major: 0
+    minor: 1
+    contract: v1beta2
+  - major: 1
+    minor: 0
+    contract: v1beta2
+  - major: 1
+    minor: 1
+    contract: v1beta2
+```
+
+Two rules follow from that file:
+
+- **Add a `releaseSeries` entry** when you open a new minor (here, when `1.2`
+  starts), with the contract it implements.
+- **A contract bump is a breaking change** for users, not a routine release. It
+  changes the shared object shapes, so it belongs in a major/minor release and
+  in the *Breaking changes* section of the notes.
+
+## Steps
+
+### 1. Pick the version
+
+Use a valid semantic version as the git tag. The current reference release is
+`v1.1.0-rc4`. Pre-release tags (anything containing a `-`) are published as
+GitHub prereleases by the automation.
+
+### 2. Build and push the controller image
+
+The image referenced by `infrastructure-components.yaml` must be pullable by the
+management cluster:
+
+```bash
+export IMG=ghcr.io/vatesfr/cluster-api-provider-vates:v1.1.0-rc4
+make docker-build docker-push IMG=$IMG
+```
+
+### 3. Generate the release artifacts
+
+```bash
+make release-manifests IMG=$IMG
+```
+
+This produces the three assets in `dist/`:
+
+- `dist/infrastructure-components.yaml` — a `capi-system` namespace followed by
+  the full kustomize build of `config/default` (CRDs, RBAC, manager Deployment);
+- `dist/metadata.yaml` — copied from the repository root;
+- `dist/cluster-template.yaml` — copied from
+  `templates/kubeadm/base/clusterctl/almalinux-fromscratch.yaml`.
+
+### 4. Create the GitHub release
+
+Tag the release, attach the three files from `dist/`, and let GitHub generate the
+notes:
+
+```bash
+gh release create v1.1.0-rc4 --verify-tag --generate-notes \
+  dist/infrastructure-components.yaml \
+  dist/metadata.yaml \
+  dist/cluster-template.yaml
+```
+
+Most of this is automated in `.github/workflows/release.yml`, which triggers on
+`v*` tags: it runs `make release-manifests` with the tag as the image tag, then
+creates the release with `--generate-notes` and `--prerelease` when the tag
+contains a `-`. The controller **image** is built and pushed by the separate
+*Build and Push Image* workflow, which also runs on tag pushes.
+
+### 5. How the changelog is generated
+
+The notes group merged pull requests by **label**, from `.github/release.yml`:
+
+| Category | Labels |
+|---|---|
+| ⚠️ Breaking changes | `breaking` |
+| 🚀 Features | `feat` |
+| 🐛 Bug fixes | `fix` |
+| 📚 Documentation | `docs` |
+| 🧹 Maintenance | `chore`, `refactor`, `build`, `ci`, `test` |
+
+The labels themselves are applied automatically by the **PR labels** workflow
+(`.github/workflows/pr-labels.yml`) from the conventional-commit prefix of the
+pull request title. A title like `feat(xomachine): …` gets the `feat` label;
+`fix: …` gets `fix`; a `!` before the colon (`feat!: …`) or a `BREAKING CHANGE`
+note in the body adds `breaking`. `dependabot` and `renovate` authors are
+excluded, and adding the `skip-changelog` label keeps a pull request out
+entirely.
+
+!!! tip "Write the PR title for the changelog"
+
+    The release notes are only as good as the pull request titles. Since the
+    label (and therefore the category) is derived from the title, use a
+    conventional-commit title on every pull request you want in the notes.
+
+## Local development (no release)
+
+While developing, `clusterctl` can read from a local overrides layer instead of a
+published release:
+
+```bash
+make -f Makefile.dev dev-overrides
+```
+
+That regenerates `dist/` and copies the three assets into
+`~/.config/cluster-api/overrides/infrastructure-vates/v1.1.0-rc4/`. `dist/`
+itself cannot be pointed at directly: a `file://` URL needs a
+`{basepath}/{provider-name}/{version}/` layout for version resolution. See
+[Development](../contributing/development.md) for the rest of the local loop.
+
+## Caveats
+
+!!! warning "Version detection uses the Go proxy"
+
+    `clusterctl` detects available provider versions through `proxy.golang.org`.
+    While the module is not published there, detection may fail. Work around it
+    by setting `GOPROXY=off` or `GOPROXY=direct`, or by pinning the version
+    explicitly (`vates:v1.1.0-rc4`) on the command line.
+
+!!! note "Not in the built-in provider list yet"
+
+    Until vates is added to `clusterctl`'s built-in provider list (a pull request
+    to `kubernetes-sigs/cluster-api`), users must register the provider in
+    `clusterctl.yaml` as shown above. This is the same step as for any other
+    out-of-tree infrastructure provider.
+
+## Where next
+
+- Install a release: [Installation](../getting-started/installation.md).
+- Upgrade an existing installation: [Upgrading](upgrading.md).
+- Build the artifacts by hand while developing:
+  [Development](../contributing/development.md).

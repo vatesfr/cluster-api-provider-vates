@@ -30,8 +30,8 @@ hands it over so the infrastructure provider can deliver it to the VM.
 It is the bootstrap provider that knows things like the join token, the
 certificate authority, and the kubelet settings.
 
-Examples: `kubeadm` (the reference bootstrap provider), `Talos`, `k0smotron`,
-`openshift`.
+Examples: `kubeadm` (the reference bootstrap provider), `Talos`, `vates`
+(experimental, this project), `k0smotron`, `openshift`.
 
 ## 3. Control plane provider — *who runs the control plane*
 
@@ -44,7 +44,7 @@ a `MachineDeployment`-like controller. That controller is the control plane
 provider.
 
 Examples: `kubeadm` (KCP, the reference control plane provider), `Talos`,
-`k0smotron`.
+`vates` (experimental, this project), `k0smotron`.
 
 ## Why split it this way?
 
@@ -74,13 +74,16 @@ flowchart LR
     With vates-capi you can mix and match:
 
     - **kubeadm** bootstrap + **kubeadm** control plane → the classic
-      cloud-init based flow.
+      cloud-init flow: it works with any cloud-init-capable OS, but it *needs*
+      cloud-init ([guide](../guides/providers/kubeadm.md)).
+    - **Vates Kube OS** bootstrap + **Vates Kube OS** control plane → the
+      immutable node image, **experimental**
+      ([guide](../guides/providers/vates-kube-os.md)).
     - **Talos** bootstrap + **Talos** control plane → an immutable,
-      cloud-init-free OS.
+      cloud-init-free OS ([guide](../guides/providers/talos/index.md)).
 
-    The infrastructure provider is the same in both cases. That is the payoff of
-    the split. See the [Talos guide](../guides/providers/talos/index.md) for the second
-    combination.
+    The infrastructure provider is the same in all cases. That is the payoff of
+    the split.
 
 !!! info "One provider package can fill several roles"
 
