@@ -20,8 +20,7 @@ that meets the following requirements:
 
 Create this template in XO by importing an AlmaLinux 10 cloud image from
 `https://repo.almalinux.org/almalinux/10/cloud/`, or build one with Packer
-(see `packer/`). Set `HARBOR_HOST` to your Harbor registry hostname
-to configure containerd registry mirrors (optional).
+(see `packer/`).
 
 Once the template is ready, note its **UUID** (templateID) and your **pool UUID**
 (poolID) — you will need them in the XOMachineTemplate manifests.
@@ -196,8 +195,6 @@ following fields:
 | `spec.template.spec.poolID` | UUID of your Xen Orchestra pool |
 | `spec.topology.classRef.name` | ClusterClass variant to use (`vates-almalinux-prefilled` or `vates-almalinux-fromscratch`) |
 | `spec.topology.variables` | Control plane endpoint, VM name prefix, load balancer, replicas |
-| `HARBOR_HOST` (env var) | Hostname of your Harbor registry (e.g. `harbor.example.com`). Set before running `make` in `packer/` to enable containerd registry mirrors. Leave unset to pull directly from upstream. |
-| `HARBOR_CA_PATH` (env var) | Path to the Harbor CA certificate file (PEM). Required if Harbor uses a self-signed cert. Copy your Harbor CA PEM to a known path and set this variable before running `packer build`. Example: `export HARBOR_CA_PATH=/etc/pki/harbor-ca.crt`. If unset, the script skips CA installation (mirrors still work if Harbor uses a publicly-trusted CA). |
 
 These values are placeholders (`<your-xo-network-uuid>`, `<your-xo-template-uuid>`,
 `<your-xo-pool-uuid>`) and will differ in your environment.
