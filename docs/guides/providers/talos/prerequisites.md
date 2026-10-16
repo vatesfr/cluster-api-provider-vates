@@ -96,6 +96,39 @@ The image and the pinned version must therefore agree exactly. Bump both
 together: rebuild the image for the new Talos version, update the template in
 XO, and set `talosVersion` to match.
 
+## Match the providers to the image
+
+Three things have to agree: the Talos image, the shape of the kubelet patch, and
+the CABPT/CACPPT versions.
+
+| Image | kubelet `extraArgs` | CABPT | CACPPT |
+|---|---|---|---|
+| Talos 1.13.x | `machine.kubelet.extraArgs`, inline | v0.6.12 | v0.5.13 |
+| Talos 1.14.x | standalone `KubeletConfig` document | v0.6.13 | v0.5.14 |
+
+Getting it wrong fails at boot, with the node stuck in `STAGE: Booting` and
+`apid` never listening — two different errors for two different mismatches:
+
+- **kubelet patch in the wrong shape** — the node refuses the whole machine
+  configuration: `"KubeletConfig" "v1alpha1": not registered` on 1.13.x when the
+  standalone document is used; `kubelet config is already set in v1alpha1 config
+  (.machine.kubelet)` on 1.14.x when the inline form is used.
+- **provider too new for the image** — CABPT v0.6.13 emits the Talos 1.14
+  multi-document configuration (`DiscoveryServiceConfig`,
+  `DiscoveryIdentityConfig`, `ResolverConfig`, `VolumeConfig`, …) for a
+  `generateType: join` machine. A 1.13.x node does not know those documents and
+  refuses the configuration. Control plane machines are unaffected: their
+  configuration comes from CACPPT, not CABPT, which is why a mixed setup can show
+  three healthy control plane nodes and no worker.
+
+!!! warning "The Talos providers are not actively developed"
+
+    Sidero Labs states it is no longer actively developing the Cluster API
+    Control Plane Provider Talos. Pin the provider versions in your clusterctl
+    configuration (`clusterctl init --bootstrap talos:vX.Y.Z --control-plane
+    talos:vX.Y.Z`) instead of taking the latest, and treat a Talos image upgrade
+    as a change to be tested against those pinned providers.
+
 ## Checklist
 
 Before moving on, confirm every item:
