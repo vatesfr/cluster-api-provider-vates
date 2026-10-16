@@ -140,14 +140,9 @@ spec:
                   dhcp: true
                   vip:
                     ip: ${CP_VIP}
-        # kubelet is a standalone document since Talos 1.12: patching
-        # machine.kubelet here makes the whole config invalid
-        # ("kubelet config is already set in v1alpha1 config").
-        - |
-          apiVersion: v1alpha1
-          kind: KubeletConfig
-          extraArgs:
-            cloud-provider: external
+          kubelet:
+            extraArgs:
+              cloud-provider: external
         # The default CNI is replaced by Cilium (spec.addons.cni of the
         # XOCluster); kube-proxy is disabled when Cilium replaces it.
         - |
@@ -174,14 +169,9 @@ spec:
               servers:
                 - time.cloudflare.com
                 - time.google.com
-        # kubelet is a standalone document since Talos 1.12: patching
-        # machine.kubelet here makes the whole config invalid
-        # ("kubelet config is already set in v1alpha1 config").
-        - |
-          apiVersion: v1alpha1
-          kind: KubeletConfig
-          extraArgs:
-            cloud-provider: external
+          kubelet:
+            extraArgs:
+              cloud-provider: external
         # The default CNI is replaced by Cilium (spec.addons.cni of the
         # XOCluster); kube-proxy is disabled when Cilium replaces it.
         - |
