@@ -59,23 +59,14 @@ Two approaches:
 
 **Option A — everything via `clusterctl` (recommended)**
 
-The vates provider is not published to the network, so configure a local file
-override **before** running `clusterctl init`. One command regenerates `dist/`,
-refreshes the local clusterctl overrides and creates
-`~/.config/cluster-api/clusterctl.yaml` if needed:
-
-```bash
-make -f Makefile.dev dev-overrides
-```
-
-If an existing `~/.config/cluster-api/clusterctl.yaml` does not register vates
-(the command warns about it), add it manually:
+Register the published vates provider **before** running `clusterctl init`, in
+`~/.config/cluster-api/clusterctl.yaml`:
 
 ```yaml
 providers:
   - name: vates
-    url: file://${HOME}/.config/cluster-api/overrides/infrastructure-vates/v1.1.0-rc4/infrastructure-components.yaml
     type: InfrastructureProvider
+    url: https://github.com/vatesfr/cluster-api-provider-vates/releases/latest/infrastructure-components.yaml
 ```
 
 Then install CAPI core + Talos bootstrap/control plane + vates in one command:
