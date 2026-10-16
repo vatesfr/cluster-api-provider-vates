@@ -66,10 +66,10 @@ Two rules follow from that file:
 ### 1. Pick the version
 
 Use a valid semantic version as the git tag; this page writes it `<version>`
-(for example `v1.2.0`). Tags containing a `-` (release candidates, betas) are
-published as GitHub **prereleases** by the automation, so they are not the
-repository's *latest* release — and `clusterctl` resolves the latest release
-when no version is given.
+(for example `v1.2.0`). **Alpha and beta** tags are published as GitHub
+**prereleases**; anything else — release candidates included — becomes a normal
+release and therefore the repository's *latest*, which is what `clusterctl`
+resolves when no version is given.
 
 ### 2. Build and push the controller image
 
@@ -109,9 +109,9 @@ gh release create <version> --verify-tag --generate-notes \
 
 Most of this is automated in `.github/workflows/release.yml`, which triggers on
 `v*` tags: it runs `make release-manifests` with the tag as the image tag, then
-creates the release with `--generate-notes` and `--prerelease` when the tag
-contains a `-`. The controller **image** is built and pushed by the separate
-*Build and Push Image* workflow, which also runs on tag pushes.
+creates the release with `--generate-notes`, adding `--prerelease` only for
+alpha and beta tags. The controller **image** is built and pushed by the
+separate *Build and Push Image* workflow, which also runs on tag pushes.
 
 ### 5. How the changelog is generated
 

@@ -40,8 +40,10 @@ jobs:
           set -euo pipefail
 
           flags=()
-          # Pre-release tags (v1.0.0-rc1, -beta1, -alpha1) are published as prereleases.
-          case "$TAG" in *-*) flags+=(--prerelease) ;; esac
+          # Only alpha/beta tags are prereleases. Release candidates (v1.0.0-rc1)
+          # are published as normal releases so they become the repository's
+          # "latest" — what `clusterctl init` resolves when no version is given.
+          case "$TAG" in *-alpha*|*-beta*) flags+=(--prerelease) ;; esac
 
           gh release create "$TAG" "${flags[@]}" --verify-tag --generate-notes \
             dist/infrastructure-components.yaml \
