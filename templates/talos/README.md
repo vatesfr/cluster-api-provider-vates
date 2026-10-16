@@ -72,7 +72,7 @@ providers:
 Then install CAPI core + Talos bootstrap/control plane + vates in one command:
 
 ```bash
-clusterctl init --bootstrap talos --control-plane talos --infrastructure vates
+clusterctl init --bootstrap talos:v0.6.13 --control-plane talos:v0.5.14 --infrastructure vates
 ```
 
 **Option B — vates deployed via `install.yaml`**
@@ -81,8 +81,19 @@ Install the CAPI core and the Talos providers with `clusterctl` (this is what
 installs the `TalosControlPlane` / `TalosConfig` CRDs):
 
 ```bash
-clusterctl init --bootstrap talos --control-plane talos
+clusterctl init --bootstrap talos:v0.6.13 --control-plane talos:v0.5.14
 ```
+
+> ⚠️ **The Talos Cluster API providers are unmaintained.** Sidero Labs states it
+> is no longer actively developing the Cluster API Control Plane Provider Talos,
+> and the bootstrap provider is in the same position: neither receives upstream
+> updates, so **support for them is effectively over**. Always pin the versions
+> instead of installing `latest`, and test every Talos image upgrade against the
+> pinned providers: the image, the kubelet patch shape and the provider versions
+> form a triple that has to agree, or nodes stop in `STAGE: Booting` with no
+> service listening. See the
+> [prerequisites page](docs/guides/providers/talos/prerequisites.md) for the
+> version matrix.
 
 Then deploy the vates infrastructure provider manually. The bundled
 `dist/install.yaml` contains everything (CRDs, RBAC, Deployment):

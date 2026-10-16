@@ -14,11 +14,32 @@ as for kubeadm.
 and bootstrap (CABPT) providers. `clusterctl` knows them by default:
 
 ```bash
-clusterctl init --bootstrap talos --control-plane talos
+clusterctl init --bootstrap talos:v0.6.13 --control-plane talos:v0.5.14
 ```
 
 This installs Cluster API core plus CACPPT and CABPT. It does **not** install
 vates-capi.
+
+!!! danger "These providers are no longer actively developed"
+
+    Sidero Labs states it is no longer actively developing the Cluster API
+    Control Plane Provider Talos, and the bootstrap provider is in the same
+    position: neither CACPPT nor CABPT receives upstream updates. **Support for
+    them is effectively over.** Nothing upstream will adapt the day a Talos
+    release changes the configuration a node accepts, and no upstream fix will
+    arrive for a new image: it falls to us to notice and to carry it.
+
+    Two consequences, both learned the hard way here:
+
+    - **Never install `latest`, always pin.** The provider renders the
+      configuration for **its own** Talos version, not for the image's. A
+      provider newer than the image emits documents the node refuses
+      (`DiscoveryServiceConfig … not registered`), and an older one emits a shape
+      the newer node refuses. The image, the kubelet patch shape and the provider
+      versions form a triple that has to agree — see
+      [Match the providers to the image](prerequisites.md#match-the-providers-to-the-image).
+    - **Test every Talos image upgrade** against the pinned providers before
+      pointing a template at it. Nobody upstream does it for us.
 
 If you have not installed vates-capi yet, do it in the same command:
 
