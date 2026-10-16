@@ -13,6 +13,8 @@ spec:
   template:
     spec:
       bootstrapProvider: talos
+      bootstrap:
+        format: passthrough
       namePrefix: talos-worker
       templateID: <your-xo-talos-template-uuid>
       poolID: <your-xo-pool-uuid>

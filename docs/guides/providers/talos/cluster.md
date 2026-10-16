@@ -144,11 +144,9 @@ spec:
                   dhcp: true
                   vip:
                     ip: <your-cp-vip>
-        - |
-          apiVersion: v1alpha1
-          kind: KubeletConfig
-          extraArgs:
-            cloud-provider: external
+          kubelet:
+            extraArgs:
+              cloud-provider: external
 ```
 
 Three things are going on here:
@@ -157,15 +155,15 @@ Three things are going on here:
   [maintenance-mode trap](#the-maintenance-mode-trap)).
 - `vip.ip` is Talos' **native** shared IP, not kube-vip. It must equal
   `XOCluster.spec.controlPlaneEndpoint.host` in the fourth patch.
-- The kubelet settings live in their own `KubeletConfig` document.
-  **Since Talos 1.12 the kubelet is a standalone document**: patching
-  `machine.kubelet` here is rejected at boot with
-  `kubelet config is already set in v1alpha1 config`, and the node stops before
-  starting any service.
+- The kubelet settings go **inline**, under `machine.kubelet`. A standalone
+  `KubeletConfig` document is rejected by Talos v1.13.9 with
+  `"KubeletConfig" "v1alpha1": not registered`: the node decodes the machine
+  configuration, refuses it, and never leaves the boot stage. CABPT merges the
+  inline patch into the configuration it generates.
 
 The worker's `TalosConfigTemplate` in `base/` carries the time servers and the
-same standalone `KubeletConfig` patch, so workers and control plane nodes agree
-on the CCM (`cloud-provider: external`).
+same inline kubelet setting, so workers and control plane nodes agree on the CCM
+(`cloud-provider: external`).
 
 ### 4. `patch-xocluster.yaml` — control plane endpoint
 
