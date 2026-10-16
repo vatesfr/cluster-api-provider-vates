@@ -16,6 +16,6 @@ spec:
               servers:
                 - time.cloudflare.com
                 - time.google.com
-          kubelet:
-            extraArgs:
-              cloud-provider: external
+            kubelet:
+              extraArgs:
+                cloud-provider: external

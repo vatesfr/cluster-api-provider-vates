@@ -238,9 +238,9 @@ spec:
                   dhcp: true
                   vip:
                     ip: <your-cp-vip>
-          kubelet:
-            extraArgs:
-              cloud-provider: external
+            kubelet:
+              extraArgs:
+                cloud-provider: external
 ```
 
 The kubelet setting goes **inline**, under `machine.kubelet`. Do not move it to a

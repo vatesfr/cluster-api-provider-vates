@@ -140,9 +140,9 @@ spec:
                   dhcp: true
                   vip:
                     ip: ${CP_VIP}
-          kubelet:
-            extraArgs:
-              cloud-provider: external
+            kubelet:
+              extraArgs:
+                cloud-provider: external
         # The default CNI is replaced by Cilium (spec.addons.cni of the
         # XOCluster); kube-proxy is disabled when Cilium replaces it.
         - |
@@ -169,9 +169,9 @@ spec:
               servers:
                 - time.cloudflare.com
                 - time.google.com
-          kubelet:
-            extraArgs:
-              cloud-provider: external
+            kubelet:
+              extraArgs:
+                cloud-provider: external
         # The default CNI is replaced by Cilium (spec.addons.cni of the
         # XOCluster); kube-proxy is disabled when Cilium replaces it.
         - |
