@@ -68,31 +68,13 @@ contents.
 `~/.config/cluster-api/clusterctl.yaml` (the file clusterctl reads — not
 `~/.config/clusterctl/`).
 
-For **local development**, one command regenerates `dist/`, refreshes the local
-clusterctl overrides and creates the config file (if missing):
-
-```bash
-make -f Makefile.dev dev-overrides
-```
-
-If an existing config does not register vates (the command warns about it),
-add the entry manually:
+Register the published release (no repo clone needed):
 
 ```yaml
 providers:
   - name: vates
     type: InfrastructureProvider
-    url: file://${HOME}/.config/cluster-api/overrides/infrastructure-vates/v1.1.0-rc4/infrastructure-components.yaml
-```
-
-For a **published release**, register the GitHub release instead (no repo clone
-needed):
-
-```yaml
-providers:
-  - name: vates
     url: https://github.com/vatesfr/cluster-api-provider-vates/releases/latest/infrastructure-components.yaml
-    type: InfrastructureProvider
 ```
 
 Then create the XO credentials secret (the vates provider reads it at startup)
@@ -105,13 +87,18 @@ kubectl create secret generic xo-credentials -n capi-system \
   --from-literal=token="<your-xo-token>" \
   --from-literal=insecure="true"
 
-clusterctl init --infrastructure vates:v1.1.0-rc4
-clusterctl generate cluster my-cluster --infrastructure vates:v1.1.0-rc4 \
+clusterctl init --infrastructure vates
+clusterctl generate cluster my-cluster --infrastructure vates \
   --control-plane-machine-count 3 --worker-machine-count 2
 ```
 
+Without a version, `clusterctl` installs the **latest** release; append `:vX.Y.Z`
+to pin one. For **local development** (running the provider from source against
+a local overrides layer), see
+[docs/contributing/development.md](docs/contributing/development.md).
+
 `clusterctl generate cluster` (without `--from`) uses the provider's default
-`cluster-template.yaml` — shipped in `dist/` for releases. See
+`cluster-template.yaml`, shipped as a release asset. See
 [RELEASING.md](RELEASING.md) for how to publish a release.
 
 ## Using with Talos
@@ -216,11 +203,10 @@ clusterctl overrides, tests, debugging): see [DEVELOPMENT.md](DEVELOPMENT.md).
 │   ├── talos/                     # Talos cluster templates (base + overlays)
 │   └── README.md                  # Template usage guide
 ├── examples/                      # Example manifests (kind)
-├── dist/                          # Generated release artifacts
-│   ├── install.yaml               # kubectl apply bundle
-│   ├── infrastructure-components.yaml  # clusterctl bundle
-│   ├── cluster-template.yaml      # clusterctl template (kubeadm almalinux-fromscratch)
-│   └── chart/                     # Helm chart
+├── dist/                          # Distribution artifacts
+│   ├── install.yaml               # kubectl apply bundle (committed)
+│   └── chart/                     # Helm chart (committed)
+│                                  # clusterctl assets are generated at release time
 
 ```
 
@@ -231,9 +217,10 @@ clusterctl overrides, tests, debugging): see [DEVELOPMENT.md](DEVELOPMENT.md).
 make release-manifests IMG=ghcr.io/vatesfr/cluster-api-provider-vates:latest
 ```
 
-`dist/` contains the three assets required by `clusterctl`:
-`infrastructure-components.yaml`, `metadata.yaml` and `cluster-template.yaml`.
-See [RELEASING.md](RELEASING.md) for the full release workflow.
+`make release-manifests` writes the three assets `clusterctl` needs —
+`infrastructure-components.yaml`, `metadata.yaml` and `cluster-template.yaml` —
+into `dist/`. They are generated (git-ignored) and attached to the release by
+CI. See [RELEASING.md](RELEASING.md) for the full release workflow.
 
 ## License
 
