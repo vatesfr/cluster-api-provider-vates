@@ -44,13 +44,14 @@ jobs:
       - name: Compute tags
         id: meta
         run: |
+          set -euo pipefail
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
-            TAGS="ghcr.io/vatesfr/cluster-api-provider-vates:pr-${GITHUB_EVENT_NUMBER}"
+            TAGS="ghcr.io/vatesfr/cluster-api-provider-vates:pr-${{ github.event.pull_request.number }}"
           else
             TAGS="ghcr.io/vatesfr/cluster-api-provider-vates:${GITHUB_REF_NAME}"
             TAGS="$TAGS,ghcr.io/vatesfr/cluster-api-provider-vates:latest"
           fi
-          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         uses: docker/build-push-action@v7
