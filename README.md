@@ -1,5 +1,7 @@
 # vates-capi
 
+[![Documentation Status](https://readthedocs.org/projects/vates-capi/badge/?version=latest)](https://vates-capi.readthedocs.io/en/latest/?badge=latest)
+
 A [Cluster API](https://cluster-api.sigs.k8s.io/) infrastructure provider for
 [Xen Orchestra](https://xen-orchestra.com/). Manages the full lifecycle of VMs
 on XenServer / XCP-ng pools as Kubernetes worker and control plane nodes.

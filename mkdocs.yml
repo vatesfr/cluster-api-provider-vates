@@ -5,7 +5,7 @@
 # (`mkdocs build`). We ship on Zensical, the successor to Material for MkDocs.
 
 site_name: vates-capi
-site_url: https://cluster-api-provider-vates.readthedocs.io/
+site_url: https://vates-capi.readthedocs.io/
 site_description: A Cluster API infrastructure provider for Xen Orchestra and XCP-ng.
 site_author: Vates
 
