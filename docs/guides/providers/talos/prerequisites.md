@@ -96,28 +96,6 @@ The image and the pinned version must therefore agree exactly. Bump both
 together: rebuild the image for the new Talos version, update the template in
 XO, and set `talosVersion` to match.
 
-## The template must declare the payload format
-
-Talos is configured by a machine configuration, not by cloud-init, so the
-machine templates declare the payload as **pass-through**:
-
-```yaml
-spec:
-  template:
-    spec:
-      bootstrap:
-        format: passthrough
-```
-
-With that declaration the provider delivers the machine config verbatim **and
-labels the config drive `cidata`** — the only label Talos' `nocloud` datasource
-looks for. Leave the declaration out and the drive is still written, but
-unlabelled: the node boots, reports an address through the guest agent, stays in
-`STAGE: Booting`, and never applies its machine configuration. Nothing errors
-anywhere; the node simply does nothing.
-
-See [Bootstrap payload](../../../reference/bootstrap.md) for the full semantics.
-
 ## Checklist
 
 Before moving on, confirm every item:
@@ -128,7 +106,6 @@ Before moving on, confirm every item:
 - [ ] `viridian: false` on the XO template.
 - [ ] Template UUID, pool UUID and network UUID noted.
 - [ ] `talosVersion` chosen to match the image exactly.
-- [ ] Machine templates declare `bootstrap.format: passthrough`.
 
 Next: [install the Talos providers](installation.md).
 

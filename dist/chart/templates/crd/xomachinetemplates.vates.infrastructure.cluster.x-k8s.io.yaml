@@ -78,8 +78,7 @@ spec:
 
                                 - "passthrough" (default): deliver the payload untouched. Use it for
                                   any bootstrap provider whose payload must not be interpreted, e.g.
-                                  Talos. The config drive is labelled "cidata" so the guest platform
-                                  finds the payload.
+                                  Talos.
                                 - "cloudinit": the payload is a cloud-init document, which may be
                                   enriched: the XO user's SSH keys are merged in when the cluster sets
                                   injectSSHKeys, and kube-vip is injected when the cluster sets

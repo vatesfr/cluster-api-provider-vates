@@ -80,23 +80,13 @@ func Build(ctx context.Context, deps Dependencies, behavior Behavior) (Result, e
 		}
 	}
 
-	return Result{CloudConfig: cloudConfig, NetworkConfig: networkConfig(deps, behavior)}, nil
+	return Result{CloudConfig: cloudConfig, NetworkConfig: networkConfig(deps)}, nil
 }
 
-// networkConfig returns the config-drive network payload.
-//
-// The guest config the user set on the XOMachine always wins. When there is
-// none, the answer depends on the declared format:
-//
-//   - cloud-init: nil. cloud-init looks for the user-data on its own, so the
-//     drive needs no network payload.
-//   - pass-through: the "#" comment placeholder. Xen Orchestra only labels the
-//     config drive "cidata" when a network payload is present, and a
-//     pass-through payload is read by the guest platform (Talos' nocloud)
-//     which finds its machine configuration by that label. Without the
-//     placeholder the drive is written but stays invisible to the node, which
-//     then boots with no machine configuration at all.
-func networkConfig(deps Dependencies, behavior Behavior) *string {
+// networkConfig returns the config-drive network payload: the guest config the
+// user set on the XOMachine, or nil when none is required. Xen Orchestra
+// creates the config drive from CloudConfig alone, so nothing else is written.
+func networkConfig(deps Dependencies) *string {
 	guestConfig := ""
 	if deps.XOMachine.Spec.NetworkConfig != nil {
 		guestConfig = deps.XOMachine.Spec.NetworkConfig.GuestConfig
@@ -104,9 +94,5 @@ func networkConfig(deps Dependencies, behavior Behavior) *string {
 	if guestConfig != "" {
 		return &guestConfig
 	}
-	if behavior.Format == infrastructurev1beta2.BootstrapFormatCloudInit {
-		return nil
-	}
-	placeholder := "#"
-	return &placeholder
+	return nil
 }

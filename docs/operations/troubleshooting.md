@@ -168,15 +168,7 @@ The other prerequisites are just as unforgiving, and they fail the same way:
 - it must include the `siderolabs/xen-guest-agent` extension;
 - the template must be **never booted**;
 - `viridian` must be `false` in Xen Orchestra (with `viridian: true`, XO prepends
-  an MBR that Talos cannot mount as a config drive);
-- the machine templates must declare `bootstrap.format: passthrough`, which is
-  what makes the provider label the config drive `cidata`; without it the drive
-  is written but Talos never finds its machine configuration, and the node stays
-  in `STAGE: Booting` (fixed in v1.1.0 — check the provider version you deploy);
-- the NTP server the **DHCP** advertises must actually answer: Talos syncs its
-  clock during the boot stage, before the machine configuration (and therefore
-  before `machine.time.servers`) is applied. A rate-limiting gateway blocks every
-  node at once, with `kiss of death` in the console.
+  an MBR that Talos cannot mount as a config drive).
 
 See the [Talos prerequisites](../guides/providers/talos/prerequisites.md) for the
 full list.

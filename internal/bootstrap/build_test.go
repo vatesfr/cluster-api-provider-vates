@@ -19,7 +19,7 @@ import (
 )
 
 var _ = Describe("Build", func() {
-	It("passes the payload through and writes the cidata placeholder by default", func() {
+	It("passes the payload through and writes no network config by default", func() {
 		deps := Dependencies{
 			XOMachine:     &infrastructurev1beta2.XOMachine{},
 			BootstrapData: []byte("version: v1alpha1\n"),
@@ -27,19 +27,6 @@ var _ = Describe("Build", func() {
 		result, err := Build(context.Background(), deps, Behavior{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.CloudConfig).To(Equal("version: v1alpha1\n"))
-		// The placeholder is what makes Xen Orchestra label the config drive
-		// "cidata", the only label a pass-through guest platform looks for.
-		Expect(result.NetworkConfig).NotTo(BeNil())
-		Expect(*result.NetworkConfig).To(Equal("#"))
-	})
-
-	It("writes no network config for a cloud-init payload with no guest config", func() {
-		deps := Dependencies{
-			XOMachine:     &infrastructurev1beta2.XOMachine{},
-			BootstrapData: []byte("#cloud-config\n"),
-		}
-		result, err := Build(context.Background(), deps, Behavior{Format: infrastructurev1beta2.BootstrapFormatCloudInit})
-		Expect(err).NotTo(HaveOccurred())
 		Expect(result.NetworkConfig).To(BeNil())
 	})
 
