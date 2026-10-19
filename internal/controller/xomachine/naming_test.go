@@ -105,3 +105,30 @@ var _ = Describe("foreignVMCount", func() {
 		Expect(foreignVMCount(vms, "vm-7n62g", "")).To(Equal(1))
 	})
 })
+
+var _ = Describe("DefaultVMName", func() {
+	It("derives the distribution from the bootstrap configuration kind", func() {
+		Expect(DefaultVMName("TalosConfig", "my-cluster", true, "my-cluster-cp-4hgx7")).
+			To(Equal("TALOS-my-cluster-CP-4hgx7"))
+		Expect(DefaultVMName("KubeadmConfig", "my-cluster", false, "my-cluster-md-0-hdvzv-5bxt9-48gx5")).
+			To(Equal("KUBEADM-my-cluster-WORKER-48gx5"))
+		Expect(DefaultVMName("VatesConfig", "my-cluster", true, "my-cluster-x8kz2-7n62g")).
+			To(Equal("VATES-my-cluster-CP-7n62g"))
+	})
+
+	It("names any bootstrap provider without a list of known ones", func() {
+		Expect(DefaultVMName("RKE2Config", "my-cluster", true, "my-cluster-x8kz2-7n62g")).
+			To(Equal("RKE2-my-cluster-CP-7n62g"))
+		Expect(DefaultVMName("CustomBootstrap", "my-cluster", false, "my-cluster-x8kz2-7n62g")).
+			To(Equal("CUSTOMBOOTSTRAP-my-cluster-WORKER-7n62g"))
+	})
+
+	It("falls back to CAPI without a bootstrap configuration", func() {
+		Expect(DefaultVMName("", "my-cluster", false, "my-cluster-x8kz2-7n62g")).
+			To(Equal("CAPI-my-cluster-WORKER-7n62g"))
+	})
+
+	It("uses the whole Machine name when it has no random suffix", func() {
+		Expect(DefaultVMName("VatesConfig", "demo", true, "vmn-0")).To(Equal("VATES-demo-CP-vmn-0"))
+	})
+})

@@ -16,7 +16,6 @@ spec:
       bootstrapProvider: talos
       bootstrap:
         format: passthrough
-      namePrefix: talos-cp
       templateID: <your-xo-talos-template-uuid>
       poolID: <your-xo-pool-uuid>
       resourceSet:

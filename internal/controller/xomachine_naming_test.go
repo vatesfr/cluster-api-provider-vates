@@ -84,14 +84,13 @@ var _ = Describe("VM naming", func() {
 		return &clusterv1.Machine{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns, Labels: labels}}
 	}
 
-	xoMachine := func(name, namePrefix string) *infrastructurev1beta2.XOMachine {
+	xoMachine := func(name string) *infrastructurev1beta2.XOMachine {
 		return &infrastructurev1beta2.XOMachine{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
 				Namespace: ns,
 				Labels:    map[string]string{clusterv1.ClusterNameLabel: clusterName},
 			},
-			Spec: infrastructurev1beta2.XOMachineSpec{NamePrefix: namePrefix},
 		}
 	}
 
@@ -122,7 +121,7 @@ var _ = Describe("VM naming", func() {
 				{"my-cluster-md-0-hdvzv-5bxt9-h2pvr", false, workerPrefix + "h2pvr"},
 			}
 			for _, tc := range cases {
-				xm := xoMachine(tc.machine, "")
+				xm := xoMachine(tc.machine)
 				r := reconciler(cluster(), xoCluster(naming()), xm)
 
 				name, err := r.resolveVMName(ctx, xm,
@@ -134,7 +133,7 @@ var _ = Describe("VM naming", func() {
 		})
 
 		It("keeps the recorded name when the XOCluster vmNaming changes", func() {
-			xm := xoMachine("my-cluster-x8kz2-7n62g", "")
+			xm := xoMachine("my-cluster-x8kz2-7n62g")
 			xc := xoCluster(naming())
 			r := reconciler(cluster(), xc, xm)
 			bs := bootstrap.ResolveBootstrapDataResult{Machine: machine(xm.Name, true)}
@@ -150,32 +149,46 @@ var _ = Describe("VM naming", func() {
 			Expect(again).To(Equal(first))
 		})
 
-		It("keeps the namePrefix naming when the XOCluster sets no vmNaming", func() {
-			xm := xoMachine("demo3-cp-7n62g", "PFT--cp")
-			r := reconciler(cluster(), xoCluster(nil), xm)
-			m := machine("demo3-cp-7n62g", true)
-			m.Labels[clusterv1.ClusterNameLabel] = "demo3"
+		It("names VMs <DISTRIBUTION>-<cluster>-<ROLE>-<ID> when the XOCluster sets no vmNaming", func() {
+			cases := []struct {
+				bootstrapKind string
+				controlPlane  bool
+				want          string
+			}{
+				{"TalosConfig", true, "TALOS-my-cluster-CP-7n62g"},
+				{"TalosConfig", false, "TALOS-my-cluster-WORKER-7n62g"},
+				{"KubeadmConfig", true, "KUBEADM-my-cluster-CP-7n62g"},
+				{"KubeadmConfig", false, "KUBEADM-my-cluster-WORKER-7n62g"},
+				{"VatesConfig", true, "VATES-my-cluster-CP-7n62g"},
+				{"VatesConfig", false, "VATES-my-cluster-WORKER-7n62g"},
+				{"RKE2Config", true, "RKE2-my-cluster-CP-7n62g"},
+				{"", false, "CAPI-my-cluster-WORKER-7n62g"},
+			}
+			for _, tc := range cases {
+				xm := xoMachine("my-cluster-x8kz2-7n62g")
+				r := reconciler(cluster(), xoCluster(nil), xm)
+				m := machine(xm.Name, tc.controlPlane)
+				m.Spec.Bootstrap.ConfigRef.Kind = tc.bootstrapKind
 
-			name, err := r.resolveVMName(ctx, xm, bootstrap.ResolveBootstrapDataResult{Machine: m})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(name).To(Equal("PFT-demo3-cp-7n62g"))
-			Expect(recorder.Events).To(BeEmpty())
+				name, err := r.resolveVMName(ctx, xm, bootstrap.ResolveBootstrapDataResult{Machine: m})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(name).To(Equal(tc.want), "bootstrap kind %q", tc.bootstrapKind)
+				Expect(fetch(r, xm.Name).Status.VMName).To(Equal(tc.want))
+			}
 		})
 
-		It("uses vmNaming and warns that namePrefix is ignored when both are set", func() {
-			xm := xoMachine("my-cluster-x8kz2-7n62g", "legacy-cp")
-			r := reconciler(cluster(), xoCluster(naming()), xm)
+		It("names the VM of an XOMachine without an owner Machine after the XOMachine", func() {
+			xm := xoMachine("standalone")
+			r := reconciler(cluster(), xoCluster(nil), xm)
 
-			name, err := r.resolveVMName(ctx, xm,
-				bootstrap.ResolveBootstrapDataResult{Machine: machine(xm.Name, true)})
+			name, err := r.resolveVMName(ctx, xm, bootstrap.ResolveBootstrapDataResult{})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(name).To(Equal(cpPrefix + "7n62g"))
-			Expect(recorder.Events).To(Receive(ContainSubstring("Warning NamePrefixIgnored")))
+			Expect(name).To(Equal("standalone"))
 		})
 
-		It("creates nothing when neither vmNaming nor namePrefix is set", func() {
-			xm := xoMachine("my-cluster-x8kz2-7n62g", "")
-			r := reconciler(cluster(), xoCluster(nil), xm)
+		It("waits instead of naming the VM when the XOCluster cannot be read", func() {
+			xm := xoMachine("my-cluster-x8kz2-7n62g")
+			r := reconciler(cluster(), xm) // the XOCluster does not exist
 
 			_, err := r.resolveVMName(ctx, xm,
 				bootstrap.ResolveBootstrapDataResult{Machine: machine(xm.Name, true)})
@@ -185,18 +198,8 @@ var _ = Describe("VM naming", func() {
 			Expect(updated.Status.Conditions).To(ContainElement(HaveField("Reason", "VMNameUnresolved")))
 		})
 
-		It("waits instead of falling back to namePrefix when the XOCluster cannot be read", func() {
-			xm := xoMachine("my-cluster-x8kz2-7n62g", "legacy-cp")
-			r := reconciler(cluster(), xm) // the XOCluster does not exist
-
-			_, err := r.resolveVMName(ctx, xm,
-				bootstrap.ResolveBootstrapDataResult{Machine: machine(xm.Name, true)})
-			Expect(err).To(HaveOccurred())
-			Expect(fetch(r, xm.Name).Status.VMName).To(BeEmpty())
-		})
-
 		It("rejects vmNaming without an owner Machine", func() {
-			xm := xoMachine("my-cluster-x8kz2-7n62g", "")
+			xm := xoMachine("my-cluster-x8kz2-7n62g")
 			r := reconciler(cluster(), xoCluster(naming()), xm)
 
 			_, err := r.resolveVMName(ctx, xm, bootstrap.ResolveBootstrapDataResult{})
@@ -209,7 +212,7 @@ var _ = Describe("VM naming", func() {
 			// names.SimpleNameGenerator.GenerateName(tcp.Name + "-") and clones
 			// the XOMachine from the template under another random name, with
 			// the cluster-name and control-plane labels.
-			xm := xoMachine("talos-xomachinetemplate-cp-xk2p9", "")
+			xm := xoMachine("talos-xomachinetemplate-cp-xk2p9")
 			xm.Labels[clusterv1.MachineControlPlaneLabel] = ""
 			r := reconciler(cluster(), xoCluster(naming()), xm)
 
@@ -224,7 +227,7 @@ var _ = Describe("VM naming", func() {
 			// the 5 random characters without a dash.
 			tcpName := "my-cluster-a-very-long-talos-control-plane-name-for-unit-tests"
 			machineName := (tcpName + "-")[:58] + "k2pq7"
-			xm := xoMachine("talos-xomachinetemplate-cp-xk2p9", "")
+			xm := xoMachine("talos-xomachinetemplate-cp-xk2p9")
 			r := reconciler(cluster(), xoCluster(naming()), xm)
 
 			name, err := r.resolveVMName(ctx, xm,
@@ -235,7 +238,7 @@ var _ = Describe("VM naming", func() {
 
 		It("names a VM after the whole Machine name when it has no random suffix, and keeps it", func() {
 			// A control plane provider may name its Machines <cluster>-<index>.
-			xm := xoMachine("vmn-0", "")
+			xm := xoMachine("vmn-0")
 			r := reconciler(cluster(), xoCluster(naming()), xm)
 			bs := bootstrap.ResolveBootstrapDataResult{Machine: machine("vmn-0", true)}
 
@@ -289,7 +292,6 @@ var _ = Describe("VM naming", func() {
 				Spec: infrastructurev1beta2.XOMachineSpec{
 					TemplateID:    uuid.Must(uuid.NewV4()).String(),
 					PoolID:        poolUUID.String(),
-					NamePrefix:    "test",
 					BootstrapData: "#cloud-config\n",
 				},
 			}
@@ -330,7 +332,7 @@ var _ = Describe("VM naming", func() {
 			// The controller recorded the name, created the VM in Xen Orchestra
 			// and stopped before saving the providerID. Meanwhile the naming
 			// configuration changed.
-			xm := xoMachine("my-cluster-x8kz2-7n62g", "")
+			xm := xoMachine("my-cluster-x8kz2-7n62g")
 			xm.UID = uid
 			xm.Spec.TemplateID = uuid.Must(uuid.NewV4()).String()
 			xm.Spec.PoolID = poolUUID.String()
@@ -370,7 +372,7 @@ var _ = Describe("VM naming", func() {
 			providerID := "xenorchestra://" + poolUUID.String() + "/" + vmUUID.String()
 			xm := &infrastructurev1beta2.XOMachine{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: ns, Finalizers: []string{xoMachineFinalizer}},
-				Spec:       infrastructurev1beta2.XOMachineSpec{NamePrefix: "test", ProviderID: &providerID},
+				Spec:       infrastructurev1beta2.XOMachineSpec{ProviderID: &providerID},
 				Status: infrastructurev1beta2.XOMachineStatus{
 					Ready:      true,
 					ProviderID: &providerID,
@@ -391,14 +393,6 @@ var _ = Describe("VM naming", func() {
 	})
 
 	Describe("CRD validation", func() {
-		It("accepts an XOMachine without namePrefix", func() {
-			xm := &infrastructurev1beta2.XOMachine{
-				ObjectMeta: metav1.ObjectMeta{Name: "no-name-prefix", Namespace: ns},
-			}
-			Expect(k8sClient.Create(ctx, xm)).To(Succeed())
-			Expect(k8sClient.Delete(ctx, xm)).To(Succeed())
-		})
-
 		It("accepts any prefix, whatever the convention", func() {
 			xc := &infrastructurev1beta2.XOCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "naming-free", Namespace: ns},

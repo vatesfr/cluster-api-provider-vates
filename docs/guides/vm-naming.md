@@ -1,10 +1,35 @@
 # VM naming
 
-By default the provider names a VM from the deprecated `XOMachine`
-`spec.namePrefix`. To follow your own naming convention instead, set
-`spec.vmNaming` on the [`XOCluster`](../reference/crds/xocluster.md).
+By default the provider names a VM after its cluster, distribution and role. To
+follow your own naming convention instead, set `spec.vmNaming` on the
+[`XOCluster`](../reference/crds/xocluster.md).
 
-## How a VM is named
+## Default names
+
+Without `vmNaming`, a VM is named `<DISTRIBUTION>-<cluster>-<ROLE>-<ID>`:
+
+| Machine bootstrap configuration | Control plane VM | Worker VM |
+|---|---|---|
+| `TalosConfig` (Talos) | `TALOS-my-cluster-CP-7n62g` | `TALOS-my-cluster-WORKER-48gx5` |
+| `KubeadmConfig` (kubeadm) | `KUBEADM-my-cluster-CP-7n62g` | `KUBEADM-my-cluster-WORKER-48gx5` |
+| `VatesConfig` (Vates Kube OS) | `VATES-my-cluster-CP-7n62g` | `VATES-my-cluster-WORKER-48gx5` |
+| none (bootstrap data secret only) | `CAPI-my-cluster-CP-7n62g` | `CAPI-my-cluster-WORKER-48gx5` |
+
+- **The distribution** is the kind of the `Machine`'s bootstrap configuration
+  without its `Config` suffix, upper-cased. There is no list of known bootstrap
+  providers: any other one is named the same way, e.g. `RKE2Config` gives
+  `RKE2`. It only names the VM: the bootstrap payload is handled the same
+  whatever the kind.
+- **The cluster** is the Cluster API `Cluster` name, so two clusters never share
+  VM names unless they have the same name.
+- **The ID** is the random suffix of the `Machine`, or its whole name when it
+  does not end with one: see below. A Machine named `vmn-0` gives
+  `VATES-my-cluster-CP-vmn-0`.
+
+An `XOMachine` created by hand, without an owner `Machine`, has no `Machine` to
+take an ID from: its VM is named after the `XOMachine`.
+
+## Custom names with `vmNaming`
 
 With `vmNaming`, the name of a VM is the prefix of its role followed by the ID
 of its Cluster API `Machine`:
@@ -182,24 +207,11 @@ spec:
     workerPrefix: CAPI-WORKER-
 ```
 
-## Migrating from `namePrefix`
+## Adding `vmNaming` to an existing cluster
 
-`namePrefix` is deprecated and will be removed in v1.2. Until then:
-
-| `XOCluster` `vmNaming` | `XOMachine` `namePrefix` | VM name |
-|---|---|---|
-| unset | set | Built from `namePrefix`, as before (see below). |
-| set | unset | Built from `vmNaming`. |
-| set | set | Built from `vmNaming`; `namePrefix` is ignored and a `NamePrefixIgnored` warning event is emitted. |
-| unset | unset | No VM is created; the `XOMachine` gets a `VMNameUnresolved` condition. |
-
-To migrate a running cluster without a ClusterClass, set `vmNaming` on its
-`XOCluster`: no machine is rolled out.
-
-Leave `namePrefix` on the `XOMachineTemplate`s for now. Removing it changes the
-templates, and with a ClusterClass that rolls out every machine. Remove it at a
-moment of your choosing, for example during a Kubernetes upgrade that replaces
-the VMs anyway.
+Without a ClusterClass, set `vmNaming` on the cluster's `XOCluster`: it is
+updated in place and no machine is rolled out. Only the VMs created afterwards
+get the new names.
 
 ### Adding the naming to a ClusterClass already in use
 
@@ -234,17 +246,5 @@ spec:
 
 Then set the variable on each Cluster, at your own pace. Each Cluster's
 `XOCluster` is updated in place and no machine is rolled out. The Clusters that
-do not set it keep the `namePrefix` naming. Once every Cluster of the class sets
-the variable, you can make it `required: true`.
-
-### What `namePrefix` actually produces
-
-`namePrefix` is not used verbatim. The provider strips a trailing `-cp` or
-`-worker` (kept as the role), then inserts the **cluster name with no
-separator**, then the role and the last dash-separated segment of the `Machine`
-name:
-
-| `namePrefix` | Cluster | Machine | VM |
-|---|---|---|---|
-| `PFT--cp` | `demo3` | `demo3-cp-7n62g` | `PFT-demo3-cp-7n62g` |
-| `my-cluster-cp` | `my-cluster` | `my-cluster-x8kz2-7n62g` | `my-clustermy-cluster-cp-7n62g` |
+do not set it keep the default names. Once every Cluster of the class sets the
+variable, you can make it `required: true`.

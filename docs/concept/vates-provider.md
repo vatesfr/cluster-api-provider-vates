@@ -33,8 +33,8 @@ When a `XOMachine` appears, the controller:
    and the network references into Xen Orchestra IDs, preferring the ID fields
    when set so it can skip the lookup.
 2. **Clones the template** into a new VM, sized by `resourceSet` (vCPUs, memory,
-   disk) and named from the `XOCluster` `vmNaming`, or from the deprecated
-   `namePrefix` (see [VM naming](../guides/vm-naming.md)).
+   disk) and named after the cluster, or from the `XOCluster` `vmNaming` (see
+   [VM naming](../guides/vm-naming.md)).
 3. **Attaches the networks** listed in `networkConfig.networks`, applies the
    `allowedIPRange` if any, and passes the guest-side netplan config through.
 4. **Delivers the bootstrap payload** from the owning `Machine`'s bootstrap

@@ -15,7 +15,6 @@ through `XOMachineTemplate`.
 | `providerID` | `*string` | Set by the controller after creation, as `xenorchestra://<pool-uuid>/<vm-uuid>`. |
 | `poolID` / `poolName` | `string` | Pool to create the VM in. Falls back to the template's pool. |
 | `templateID` / `templateName` | `string` | VM template to clone. |
-| `namePrefix` | `string` | **Deprecated**, removed in v1.2: set the `XOCluster` [`vmNaming`](xocluster.md#vmnaming) instead. Used only when the `XOCluster` sets no `vmNaming`; see [VM naming](../../guides/vm-naming.md#migrating-from-nameprefix) for the name it produces. |
 | `networkConfig` | `NetworkConfig` | Interfaces, IP filtering, and guest network config. |
 | `resourceSet` | `ResourceSet` | vCPUs, memory, disk. |
 | `failureDomain` | `*string` | Failure domain this machine belongs to. |
@@ -79,7 +78,6 @@ metadata:
   labels:
     cluster.x-k8s.io/cluster-name: my-cluster
 spec:
-  namePrefix: my-cluster-cp
   templateID: 3f2b1c0a-1d2e-4f5a-8b9c-0d1e2f3a4b5c
   poolID: 9d8c7b6a-5e4f-4a3b-9c2d-1e0f9a8b7c6d
   failureDomain: pool-a
@@ -124,7 +122,6 @@ metadata:
 spec:
   template:
     spec:
-      namePrefix: my-cluster-cp
       templateID: 3f2b1c0a-1d2e-4f5a-8b9c-0d1e2f3a4b5c
       poolID: 9d8c7b6a-5e4f-4a3b-9c2d-1e0f9a8b7c6d
       resourceSet:
@@ -148,7 +145,6 @@ delivered through the VM's config drive and applied before the first boot:
 
 ```yaml
 spec:
-  namePrefix: my-cluster-worker
   templateID: 3f2b1c0a-1d2e-4f5a-8b9c-0d1e2f3a4b5c
   poolID: 9d8c7b6a-5e4f-4a3b-9c2d-1e0f9a8b7c6d
   networkConfig:
@@ -180,7 +176,6 @@ renders the answer as netplan, replacing any `guestConfig`:
 
 ```yaml
 spec:
-  namePrefix: my-cluster-cp
   templateID: 3f2b1c0a-1d2e-4f5a-8b9c-0d1e2f3a4b5c
   poolID: 9d8c7b6a-5e4f-4a3b-9c2d-1e0f9a8b7c6d
   resourceSet:
@@ -208,7 +203,6 @@ must be in the same namespace as the `XOMachine` and carry `url` and `token`
 
 ```yaml
 spec:
-  namePrefix: my-cluster-worker
   templateID: 3f2b1c0a-1d2e-4f5a-8b9c-0d1e2f3a4b5c
   poolID: 9d8c7b6a-5e4f-4a3b-9c2d-1e0f9a8b7c6d
   identityRef:
@@ -233,7 +227,6 @@ metadata:
   name: talos-cluster-control-plane-xyz12
   namespace: default
 spec:
-  namePrefix: talos-cp
   templateID: 7c6b5a49-3d2e-4f10-9a8b-7c6d5e4f3a2b
   poolID: 9d8c7b6a-5e4f-4a3b-9c2d-1e0f9a8b7c6d
   resourceSet:

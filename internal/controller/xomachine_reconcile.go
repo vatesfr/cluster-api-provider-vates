@@ -276,11 +276,15 @@ func (r *XOMachineReconciler) resolveVMName(ctx context.Context, xoMachine *infr
 	return vmName, nil
 }
 
-// computeVMName computes the VM name from the XOCluster spec.vmNaming when it
-// is set, and from the deprecated XOMachine spec.namePrefix otherwise.
+// computeVMName computes the VM name: from the XOCluster spec.vmNaming when
+// it is set, and as <DISTRIBUTION>-<cluster>-<ROLE>-<ID> otherwise.
 //
-// The XOCluster must be readable: falling back to the namePrefix naming when it
-// is not would record a name the configuration did not ask for, for good.
+// The XOCluster must be readable: naming the VM without knowing whether it
+// sets vmNaming would record a name the configuration did not ask for, for
+// good.
+//
+// An XOMachine without an owner Machine (inline bootstrap data, outside the
+// Cluster API flow) has no Machine suffix: its VM is named after the XOMachine.
 func (r *XOMachineReconciler) computeVMName(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, bsResult bootstrap.ResolveBootstrapDataResult) (string, error) {
 	clusterName := xoMachine.Labels[clusterv1.ClusterNameLabel]
 	if clusterName == "" && bsResult.Machine != nil {
@@ -298,24 +302,22 @@ func (r *XOMachineReconciler) computeVMName(ctx context.Context, xoMachine *infr
 		}
 	}
 
-	//nolint:staticcheck // Intentional use of the deprecated field, removed in v1.2.
-	namePrefix := xoMachine.Spec.NamePrefix
-
-	if naming == nil {
-		if namePrefix == "" {
-			return "", errors.New("no VM name is configured: set the XOCluster spec.vmNaming")
+	machine := bsResult.Machine
+	if machine == nil {
+		if naming != nil {
+			return "", errors.New("the XOCluster spec.vmNaming names the VM after its owner Machine, and the XOMachine has none")
 		}
-		return r.buildVMName(xoMachine, bsResult), nil
+		return xoMachine.Name, nil
 	}
 
-	if bsResult.Machine == nil {
-		return "", errors.New("the XOCluster spec.vmNaming names the VM after its owner Machine, and the XOMachine has none")
+	controlPlane := isControlPlane(xoMachine, machine)
+	if naming != nil {
+		return xomachine.VMNameFromNaming(naming, controlPlane, machine.Name)
 	}
-	if namePrefix != "" {
-		r.warn(xoMachine, "NamePrefixIgnored", "ResolveVMName",
-			"spec.namePrefix %q is ignored: the XOCluster spec.vmNaming names the VM", namePrefix)
+	if clusterName == "" {
+		return "", errors.New("the Machine has no cluster name label to name the VM after")
 	}
-	return xomachine.VMNameFromNaming(naming, isControlPlane(xoMachine, bsResult.Machine), bsResult.Machine.Name)
+	return xomachine.DefaultVMName(machine.Spec.Bootstrap.ConfigRef.Kind, clusterName, controlPlane, machine.Name), nil
 }
 
 // isControlPlane reports whether the machine is a control plane node, from the
@@ -339,43 +341,6 @@ func (r *XOMachineReconciler) warn(xoMachine *infrastructurev1beta2.XOMachine, r
 		return
 	}
 	r.Recorder.Eventf(xoMachine, nil, corev1.EventTypeWarning, reason, action, note, args...)
-}
-
-// buildVMName is the namePrefix naming, kept unchanged for configurations that
-// set no XOCluster spec.vmNaming.
-// TODO(v1.2): remove together with the NamePrefix field.
-//
-//nolint:staticcheck // Intentional use of the deprecated field, removed in v1.2.
-func (r *XOMachineReconciler) buildVMName(xoMachine *infrastructurev1beta2.XOMachine, bsResult bootstrap.ResolveBootstrapDataResult) string {
-	if bsResult.Machine == nil {
-		return xoMachine.Spec.NamePrefix
-	}
-	cn := bsResult.Machine.Labels["cluster.x-k8s.io/cluster-name"]
-	if cn == "" {
-		return xoMachine.Spec.NamePrefix
-	}
-	role := ""
-	np := xoMachine.Spec.NamePrefix
-	for _, s := range []string{"-cp", "-worker"} {
-		if strings.HasSuffix(np, s) {
-			role = s
-			np = strings.TrimSuffix(np, s)
-			break
-		}
-	}
-	if suffix := lastDashSegment(bsResult.Machine.Name); suffix != "" {
-		role += "-" + suffix
-	}
-	return np + cn + role
-}
-
-// lastDashSegment returns the last dash-separated segment of a name, e.g.
-// "demo3-cp-7n62g" -> "7n62g". Used to make VM names unique per Machine.
-func lastDashSegment(name string) string {
-	if i := strings.LastIndex(name, "-"); i >= 0 {
-		return name[i+1:]
-	}
-	return ""
 }
 
 // tryFastPath returns a non-nil result when the VM already has a providerID

@@ -31,18 +31,6 @@ type XOMachineSpec struct {
 	// +optional
 	TemplateName string `json:"templateName,omitempty"`
 
-	// NamePrefix is deprecated and will be removed in v1.2; use the XOCluster
-	// spec.vmNaming instead.
-	//
-	// Deprecated: set XOCluster spec.vmNaming. Kept for backward
-	// compatibility: when the XOCluster sets no vmNaming, the VM is named
-	// from this prefix, the cluster name and the Machine suffix, as before.
-	// When the XOCluster sets vmNaming, this field is ignored and a warning
-	// event is emitted.
-	// TODO(v1.2): remove NamePrefix (superseded by XOCluster spec.vmNaming).
-	// +optional
-	NamePrefix string `json:"namePrefix,omitempty"`
-
 	// NetworkConfig specifies the network configuration for the VM.
 	// +optional
 	NetworkConfig *NetworkConfig `json:"networkConfig,omitempty"`

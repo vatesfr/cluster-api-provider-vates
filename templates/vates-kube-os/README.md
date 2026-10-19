@@ -48,7 +48,6 @@ clusterctl init --bootstrap vates --control-plane vates \
 ```bash
 export CP_VIP=10.30.139.30
 export CP_SUBNET=16
-export VM_NAME_PREFIX=my-cluster
 export XO_TEMPLATE_UUID=<vates-kube-os-template-uuid>
 export XO_POOL_UUID=<xo-pool-uuid>
 export XO_NETWORK_UUID=<xo-network-uuid>

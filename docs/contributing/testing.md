@@ -50,15 +50,10 @@ The suites read as specifications. A typical test nests `Describe` → `Context`
 facts, `Eventually`:
 
 ```go
-var _ = Describe("XOMachine Controller", func() {
-    It("appends a unique machine suffix to control plane VMs", func() {
-        vm := &infrastructurev1beta2.XOMachine{
-            Spec: infrastructurev1beta2.XOMachineSpec{NamePrefix: "PFT--cp"},
-        }
-        name := r.buildVMName(vm, bootstrap.ResolveBootstrapDataResult{
-            Machine: machine("demo3-cp-7n62g"),
-        })
-        Expect(name).To(Equal("PFT-demo3-cp-7n62g"))
+var _ = Describe("DefaultVMName", func() {
+    It("names the VM after the distribution of the bootstrap configuration", func() {
+        name := DefaultVMName("TalosConfig", "my-cluster", true, "my-cluster-cp-4hgx7")
+        Expect(name).To(Equal("TALOS-my-cluster-CP-4hgx7"))
     })
 })
 ```

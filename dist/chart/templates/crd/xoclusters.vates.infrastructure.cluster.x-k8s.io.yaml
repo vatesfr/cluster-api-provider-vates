@@ -231,7 +231,11 @@ spec:
               vmNaming:
                 description: |-
                   VMNaming sets the names of the cluster's VMs in Xen Orchestra. When
-                  set, it takes precedence over the deprecated XOMachine spec.namePrefix.
+                  unset, a VM is named <DISTRIBUTION>-<cluster>-<ROLE>-<ID>, e.g.
+                  "TALOS-my-cluster-CP-7n62g". DISTRIBUTION is the kind of the Machine's
+                  bootstrap configuration without its "Config" suffix, upper-cased
+                  (TalosConfig gives TALOS, KubeadmConfig gives KUBEADM), or CAPI when the
+                  Machine has none. ROLE is CP or WORKER.
 
                   The name is computed once, when the VM is created, and never changes
                   afterwards: editing this field (or the ClusterClass variables that feed

@@ -70,6 +70,40 @@ func VMNameFromNaming(naming *infrastructurev1beta2.VMNamingSpec, controlPlane b
 	return prefix + MachineID(machineName), nil
 }
 
+// defaultDistribution names the distribution of a Machine without a bootstrap
+// configuration, e.g. one that only sets a bootstrap data secret.
+const defaultDistribution = "CAPI"
+
+// distribution derives the distribution part of the default VM name from the
+// kind of the Machine's bootstrap configuration: the kind without its "Config"
+// suffix, upper-cased, e.g. "TalosConfig" -> "TALOS", "KubeadmConfig" ->
+// "KUBEADM". A kind without the suffix is used whole. There is no list of
+// known bootstrap providers: a new one is named without any change here.
+func distribution(bootstrapKind string) string {
+	name := strings.TrimSuffix(bootstrapKind, "Config")
+	if name == "" {
+		name = bootstrapKind
+	}
+	if name == "" {
+		return defaultDistribution
+	}
+	return strings.ToUpper(name)
+}
+
+// DefaultVMName returns the VM name used when the XOCluster sets no vmNaming:
+// <DISTRIBUTION>-<cluster>-<ROLE>-<ID>, e.g. "TALOS-my-cluster-CP-7n62g", where
+// ID is the Machine ID (see MachineID).
+// The distribution is derived from the kind of the Machine's bootstrap
+// configuration (see distribution). It only names the VM: the bootstrap
+// payload is handled the same whatever the kind.
+func DefaultVMName(bootstrapKind, clusterName string, controlPlane bool, machineName string) string {
+	role := "WORKER"
+	if controlPlane {
+		role = "CP"
+	}
+	return distribution(bootstrapKind) + "-" + clusterName + "-" + role + "-" + MachineID(machineName)
+}
+
 // nameLabelFilter returns the Xen Orchestra filter matching the VMs whose
 // name contains vmName. The value is quoted, so a name holding a space or a
 // character of the filter syntax (":", "|", "(", "!", ...) is searched as a

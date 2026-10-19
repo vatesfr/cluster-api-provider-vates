@@ -112,7 +112,6 @@ export CP_HOST=<your-control-plane-ip>       # control plane VIP
 export CP_PORT=6443
 export CP_LB=kube-vip                        # or "" for no load balancer
 export CP_SUBNET=<your-subnet-cidr-bits>     # e.g. 16
-export VM_NAME_PREFIX=my-cluster
 export XO_TEMPLATE_UUID=<your-xo-template-uuid>
 export XO_POOL_UUID=<your-xo-pool-uuid>
 export XO_NETWORK_UUID=<your-xo-network-uuid>
@@ -235,8 +234,8 @@ spec:
           - networkID: <your-xo-network-uuid>
 ```
 
-The cluster patch sets the topology: the control plane endpoint, the VM name
-prefix, the load balancer, and the replica counts.
+The cluster patch sets the topology: the control plane endpoint, the load
+balancer, and the replica counts.
 
 ```yaml
 apiVersion: cluster.x-k8s.io/v1beta2
@@ -254,8 +253,6 @@ spec:
           host: <your-control-plane-ip>
           port: 6443
           subnet: <your-subnet-cidr-bits>
-      - name: vmNamePrefix
-        value: <your-vm-name-prefix>
       - name: controlPlaneLB
         value: kube-vip
     controlPlane:

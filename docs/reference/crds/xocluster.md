@@ -16,7 +16,7 @@ you create a `Cluster` whose `spec.infrastructureRef` points at it.
 | `injectSSHKeys` | `bool` | `false` | Merge the XO user's SSH keys into cloud-init. |
 | `identityRef` | `LocalObjectReference` | — | A `Secret` with the XO credentials for this cluster. |
 | `tags` | `[]string` | — | Extra XO tags applied to every VM of the cluster (max 64). Additive: removing a tag does not strip it from existing VMs. |
-| `vmNaming` | `VMNamingSpec` | — | VM names in Xen Orchestra. Takes precedence over the deprecated `XOMachine` `namePrefix`. |
+| `vmNaming` | `VMNamingSpec` | `<DISTRIBUTION>-<cluster>-<ROLE>-<ID>` | VM names in Xen Orchestra. See [VM naming](../../guides/vm-naming.md). |
 | `addons` | `AddonsSpec` | CCM + CSI on, no CNI | What the provider installs into the workload cluster. |
 
 ### `controlPlaneEndpoint`
@@ -29,10 +29,13 @@ you create a `Cluster` whose `spec.infrastructureRef` points at it.
 
 ### `vmNaming`
 
-The name of a VM is the prefix of its role followed by the ID of its Cluster
-API `Machine`: its 5-character random suffix, e.g. `<controlPlanePrefix>7n62g`,
-or its whole name when it does not end with one. The prefixes are taken
-verbatim: include the separator before the ID.
+When unset, a VM is named `<DISTRIBUTION>-<cluster>-<ROLE>-<ID>`, e.g.
+`TALOS-my-cluster-CP-7n62g`: see [Default names](../../guides/vm-naming.md#default-names).
+
+When set, the name of a VM is the prefix of its role followed by the ID of its
+Cluster API `Machine`: its 5-character random suffix, e.g.
+`<controlPlanePrefix>7n62g`, or its whole name when it does not end with one.
+The prefixes are taken verbatim: include the separator before the ID.
 
 | Field | Type | Description |
 |---|---|---|

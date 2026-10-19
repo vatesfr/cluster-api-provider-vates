@@ -44,25 +44,23 @@ Each class composes a set of templates, all under
 | `KubeadmConfigTemplate` | `almalinux-…-worker` | Worker bootstrap configuration. |
 | `XOMachineTemplate` | `almalinux-cp-…` / `almalinux-worker-…` | The control plane and worker VMs. |
 
-The class exposes three variables you set on the `Cluster`:
+The class exposes two variables you set on the `Cluster`:
 
 | Variable | Required | Purpose |
 |---|---|---|
 | `controlPlaneEndpoint` | yes | `host` (the VIP), `port` (default `6443`), `subnet`. |
-| `vmNamePrefix` | yes | Prefix for the VM names in Xen Orchestra (through the deprecated `namePrefix`). |
 | `controlPlaneLB` | no | `kube-vip` to enable the floating endpoint (see [VIP](vip.md)). |
 
 The class patches these into the templates: it sets the endpoint and the load
 balancer on the `XOClusterTemplate`, adds the endpoint host to the API server's
-`certSANs`, and derives the `-cp` / `-worker` VM name prefixes.
+`certSANs`.
 
 !!! note "VM names"
 
-    `vmNamePrefix` feeds the deprecated `namePrefix`, which inserts the cluster
-    name after it: `vmNamePrefix: my-cluster` on the cluster `my-cluster` gives
-    `my-clustermy-cluster-cp-7n62g`. To control the names, and to change them
-    later without rolling out the machines, use the `XOCluster` `vmNaming`: see
-    [VM naming](vm-naming.md) for a complete ClusterClass example.
+    The class sets no VM naming, so the VMs get the default names, e.g.
+    `KUBEADM-my-cluster-CP-7n62g`. To follow your own convention, add a
+    `vmNaming` variable and patch: see [VM naming](vm-naming.md) for a complete
+    ClusterClass example.
 
 ## The `base/` + `overlays/` layout
 
@@ -141,8 +139,6 @@ spec:
           host: 192.168.1.240
           port: 6443
           subnet: 16
-      - name: vmNamePrefix
-        value: my-cluster
       - name: controlPlaneLB
         value: kube-vip
     controlPlane:

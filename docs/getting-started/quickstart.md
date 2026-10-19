@@ -16,7 +16,6 @@ export CP_HOST=192.168.1.240          # control plane VIP (see the note below)
 export CP_PORT=6443
 export CP_LB=kube-vip
 export CP_SUBNET=16
-export VM_NAME_PREFIX=my-cluster
 export XO_TEMPLATE_UUID=<your-vm-template-uuid>
 export XO_POOL_UUID=<your-pool-uuid>
 export XO_NETWORK_UUID=<your-network-uuid>
@@ -25,7 +24,9 @@ export XO_NETWORK_UUID=<your-network-uuid>
 - `CP_HOST` is the address the API server will be reachable at. With `kube-vip`
   it is a floating IP on your network that the control plane nodes share — it
   must be free and routed.
-- `VM_NAME_PREFIX` names the VMs in Xen Orchestra, so give each cluster its own.
+- The VMs are named after the cluster in Xen Orchestra, e.g.
+  `KUBEADM-my-cluster-CP-7n62g`. See [VM naming](../guides/vm-naming.md) to
+  follow your own convention.
 
 ## 2. Generate and apply
 

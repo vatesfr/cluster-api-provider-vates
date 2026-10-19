@@ -37,7 +37,6 @@ metadata:
 spec:
   template:
     spec:
-      namePrefix: my-cluster-cp
       templateID: <your-vm-template-uuid>
       poolID: <your-xo-pool-uuid>
       networkConfig:

@@ -21,7 +21,6 @@ metadata:
 spec:
   template:
     spec:                      # <- XOMachine.spec goes here
-      namePrefix: my-cluster-cp
       templateID: <your-vm-template-uuid>
       poolID: <your-xo-pool-uuid>
       resourceSet:
@@ -42,12 +41,11 @@ spec:
 Every field documented on [XOMachine](xomachine.md) is valid here, unchanged.
 Two things are worth repeating at the template level:
 
-!!! warning "`namePrefix` is deprecated"
+!!! note "VM names are not set here"
 
-    `spec.template.spec.namePrefix` is deprecated and will be removed in v1.2.
-    Name the VMs with the `XOCluster` [`vmNaming`](xocluster.md#vmnaming)
-    instead: unlike a template field, changing it rolls out no machine. See
-    [VM naming](../../guides/vm-naming.md).
+    The VM names come from the `XOCluster` [`vmNaming`](xocluster.md#vmnaming),
+    or from the default naming when it is unset, not from the template: changing
+    them rolls out no machine. See [VM naming](../../guides/vm-naming.md).
 
 !!! tip "Declare the bootstrap format on the template"
 
