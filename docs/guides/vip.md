@@ -7,7 +7,7 @@ loss of any one node. How you get one depends on the flow:
 | Flow | Floating endpoint |
 |---|---|
 | [kubeadm](providers/kubeadm.md) | **kube-vip**, injected into the control plane cloud-init by vates-capi (`XOCluster.spec.controlPlaneLB: kube-vip`). The provider does not run it — the guest does, on first boot. |
-| [Vates Kube OS](providers/vates-kube-os.md) | **kube-vip** as well, and it is the default for this flow: the node runs it, driven by `VatesBootstrapConfig.spec.cluster.vip`. |
+| [Vates Kube OS](providers/vates-kube-os.md) | **kube-vip** as well, and it is the default for this flow: the node runs it, driven by `VatesConfig.spec.cluster.vip`. |
 | [Talos](providers/talos/index.md) | Talos's **built-in** shared IP (`machine.network.interfaces[].vip.ip`). No kube-vip involved. |
 
 This page details the **kubeadm** injection; [Vates Kube OS](providers/vates-kube-os.md)

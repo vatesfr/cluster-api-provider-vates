@@ -22,7 +22,7 @@ control plane Machines.
 | Piece | Object | Role |
 |---|---|---|
 | Infrastructure | `XOCluster` + `XOMachineTemplate` | the VMs and their config drive |
-| Bootstrap | `VatesBootstrapConfigTemplate` | the `vates-node.yaml` document (role, version, endpoint, PKI, join material) |
+| Bootstrap | `VatesConfigTemplate` | the `vates-node.yaml` document (role, version, endpoint, PKI, join material) |
 | Control plane | `VatesControlPlane` | the cluster CA and the control plane Machines |
 | Addresses | `InClusterIPPool` | one address per Machine, drawn through `networkConfig.addressesFromPools` |
 
