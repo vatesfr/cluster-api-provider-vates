@@ -48,6 +48,39 @@ kubectl get crd xomachines.vates.infrastructure.cluster.x-k8s.io \
   -o jsonpath='{.spec.versions[*].name}{"\n"}'
 ```
 
+### `namePrefix` deprecation and `vmNaming`
+
+The `XOMachine` `spec.namePrefix` is deprecated in favour of the `XOCluster`
+`spec.vmNaming`, and will be removed in v1.2. See
+[VM naming](../guides/vm-naming.md) for the migration. Upgrading the provider
+renames no VM and rolls out no machine, but three behaviors change for
+configurations that keep `namePrefix`:
+
+- **The `XOCluster` must be readable before a VM is named.** The controller has
+  to know whether it sets `vmNaming`. While it cannot be read, no VM is created:
+  the `XOMachine` gets a `VMNameUnresolved` condition and the reconcile is
+  retried. Before, a VM could be created without it.
+- **An explicit `namePrefix: ""` no longer names a VM.** Without `vmNaming`, it
+  now leaves the `XOMachine` with a `VMNameUnresolved` condition.
+- **The VM name is recorded** in the `XOMachine` `status.vmName` before the VM
+  is created, and shown by `kubectl get xomachines`. VMs created before the
+  upgrade have no recorded name.
+
+The provider also emits two new `Warning` events on `XOMachine`s:
+`NamePrefixIgnored` and `DuplicateVMName`. Its role grants `create` and `patch`
+on `events.k8s.io` events.
+
+!!! note "Duplicate names are reported, not prevented"
+
+    Xen Orchestra does not enforce unique VM names, and a VM is still created when
+    another VM already has its name. With `vmNaming`, control plane names never
+    collide within a cluster. Worker names can: all the workers share one prefix,
+    and the 5-character Machine suffix has about 14.3 million values. The chance
+    that two workers present at the same time share a name is about
+    n² / 28.7 million for n workers: 0.03 % for 100 workers, 0.9 % for 500. A
+    `DuplicateVMName` event reports it, except when two such VMs are created at
+    the same instant.
+
 !!! tip "Read the release notes first"
 
     The changelog of each release is grouped by category — Features, Bug fixes,

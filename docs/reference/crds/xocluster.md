@@ -16,6 +16,7 @@ you create a `Cluster` whose `spec.infrastructureRef` points at it.
 | `injectSSHKeys` | `bool` | `false` | Merge the XO user's SSH keys into cloud-init. |
 | `identityRef` | `LocalObjectReference` | — | A `Secret` with the XO credentials for this cluster. |
 | `tags` | `[]string` | — | Extra XO tags applied to every VM of the cluster (max 64). Additive: removing a tag does not strip it from existing VMs. |
+| `vmNaming` | `VMNamingSpec` | — | VM names in Xen Orchestra. Takes precedence over the deprecated `XOMachine` `namePrefix`. |
 | `addons` | `AddonsSpec` | CCM + CSI on, no CNI | What the provider installs into the workload cluster. |
 
 ### `controlPlaneEndpoint`
@@ -25,6 +26,21 @@ you create a `Cluster` whose `spec.infrastructureRef` points at it.
 | `host` | `string` | DNS name or IP of the API server. With kube-vip, this is the floating VIP. |
 | `port` | `int32` | API server port (`6443` by convention). |
 | `subnet` | `int32` | CIDR subnet mask for the load balancer. Auto-detected if unset. |
+
+### `vmNaming`
+
+The name of a VM is the prefix of its role followed by the ID of its Cluster
+API `Machine`: its 5-character random suffix, e.g. `<controlPlanePrefix>7n62g`,
+or its whole name when it does not end with one. The prefixes are taken
+verbatim: include the separator before the ID.
+
+| Field | Type | Description |
+|---|---|---|
+| `controlPlanePrefix` | `string` | **Required**, non-empty. Prefix of the control plane VM names. |
+| `workerPrefix` | `string` | **Required**, non-empty. Prefix of the worker VM names. |
+
+A VM is named once, when it is created: changing `vmNaming` renames no existing
+VM and rolls out no machine. See [VM naming](../../guides/vm-naming.md).
 
 ### `addons`
 

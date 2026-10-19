@@ -49,12 +49,20 @@ The class exposes three variables you set on the `Cluster`:
 | Variable | Required | Purpose |
 |---|---|---|
 | `controlPlaneEndpoint` | yes | `host` (the VIP), `port` (default `6443`), `subnet`. |
-| `vmNamePrefix` | yes | Prefix for the VM names in Xen Orchestra. |
+| `vmNamePrefix` | yes | Prefix for the VM names in Xen Orchestra (through the deprecated `namePrefix`). |
 | `controlPlaneLB` | no | `kube-vip` to enable the floating endpoint (see [VIP](vip.md)). |
 
 The class patches these into the templates: it sets the endpoint and the load
 balancer on the `XOClusterTemplate`, adds the endpoint host to the API server's
 `certSANs`, and derives the `-cp` / `-worker` VM name prefixes.
+
+!!! note "VM names"
+
+    `vmNamePrefix` feeds the deprecated `namePrefix`, which inserts the cluster
+    name after it: `vmNamePrefix: my-cluster` on the cluster `my-cluster` gives
+    `my-clustermy-cluster-cp-7n62g`. To control the names, and to change them
+    later without rolling out the machines, use the `XOCluster` `vmNaming`: see
+    [VM naming](vm-naming.md) for a complete ClusterClass example.
 
 ## The `base/` + `overlays/` layout
 

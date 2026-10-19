@@ -42,12 +42,12 @@ spec:
 Every field documented on [XOMachine](xomachine.md) is valid here, unchanged.
 Two things are worth repeating at the template level:
 
-!!! warning "`namePrefix` is required"
+!!! warning "`namePrefix` is deprecated"
 
-    `spec.template.spec.namePrefix` has no default and is validated as required.
-    It is the prefix the provider uses to name each VM in Xen Orchestra; the
-    control plane or deployment appends a unique suffix per node. Pick something
-    that distinguishes the role, e.g. `my-cluster-cp` and `my-cluster-worker`.
+    `spec.template.spec.namePrefix` is deprecated and will be removed in v1.2.
+    Name the VMs with the `XOCluster` [`vmNaming`](xocluster.md#vmnaming)
+    instead: unlike a template field, changing it rolls out no machine. See
+    [VM naming](../../guides/vm-naming.md).
 
 !!! tip "Declare the bootstrap format on the template"
 

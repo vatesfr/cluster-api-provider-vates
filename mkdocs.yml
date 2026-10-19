@@ -77,6 +77,7 @@ nav:
               - guides/providers/talos/installation.md
               - guides/providers/talos/cluster.md
       - guides/clusterclass.md
+      - guides/vm-naming.md
       - guides/networking.md
       - guides/ipam.md
       - guides/vip.md

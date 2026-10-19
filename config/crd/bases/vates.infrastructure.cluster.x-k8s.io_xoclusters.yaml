@@ -221,6 +221,29 @@ spec:
                 maxItems: 64
                 type: array
                 x-kubernetes-list-type: set
+              vmNaming:
+                description: |-
+                  VMNaming sets the names of the cluster's VMs in Xen Orchestra. When
+                  set, it takes precedence over the deprecated XOMachine spec.namePrefix.
+
+                  The name is computed once, when the VM is created, and never changes
+                  afterwards: editing this field (or the ClusterClass variables that feed
+                  it) updates the XOCluster in place, rolls out no machine and renames no
+                  existing VM. Only the VMs created afterwards get the new names.
+                properties:
+                  controlPlanePrefix:
+                    description: ControlPlanePrefix is the prefix of the control plane
+                      VM names.
+                    minLength: 1
+                    type: string
+                  workerPrefix:
+                    description: WorkerPrefix is the prefix of the worker VM names.
+                    minLength: 1
+                    type: string
+                required:
+                - controlPlanePrefix
+                - workerPrefix
+                type: object
             type: object
           status:
             description: XOClusterStatus defines the observed state of XOCluster.

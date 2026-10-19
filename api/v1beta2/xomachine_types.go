@@ -31,9 +31,17 @@ type XOMachineSpec struct {
 	// +optional
 	TemplateName string `json:"templateName,omitempty"`
 
-	// NamePrefix is the prefix for the VM name.
-	// +kubebuilder:validation:Required
-	NamePrefix string `json:"namePrefix"`
+	// NamePrefix is deprecated and will be removed in v1.2; use the XOCluster
+	// spec.vmNaming instead.
+	//
+	// Deprecated: set XOCluster spec.vmNaming. Kept for backward
+	// compatibility: when the XOCluster sets no vmNaming, the VM is named
+	// from this prefix, the cluster name and the Machine suffix, as before.
+	// When the XOCluster sets vmNaming, this field is ignored and a warning
+	// event is emitted.
+	// TODO(v1.2): remove NamePrefix (superseded by XOCluster spec.vmNaming).
+	// +optional
+	NamePrefix string `json:"namePrefix,omitempty"`
 
 	// NetworkConfig specifies the network configuration for the VM.
 	// +optional
@@ -212,6 +220,12 @@ type XOMachineStatus struct {
 	// +optional
 	ProviderID *string `json:"providerID,omitempty"`
 
+	// VMName is the name given to the VM in Xen Orchestra. It is computed
+	// once, before the VM is created, and never changes afterwards, even when
+	// the naming configuration changes or the VM is renamed in Xen Orchestra.
+	// +optional
+	VMName string `json:"vmName,omitempty"`
+
 	// Addresses contains the VM's IP addresses.
 	// +optional
 	Addresses []corev1.NodeAddress `json:"addresses,omitempty"`
@@ -240,6 +254,7 @@ type XOMachineStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=xomachines,scope=Namespaced,categories=cluster-api
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=".status.ready"
+// +kubebuilder:printcolumn:name="VMName",type=string,JSONPath=".status.vmName"
 // +kubebuilder:printcolumn:name="ProviderID",type=string,JSONPath=".status.providerID",priority=1
 // +kubebuilder:printcolumn:name="TemplateID",type=string,JSONPath=".spec.templateID"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=".metadata.creationTimestamp"

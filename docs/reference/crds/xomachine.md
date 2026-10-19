@@ -15,7 +15,7 @@ through `XOMachineTemplate`.
 | `providerID` | `*string` | Set by the controller after creation, as `xenorchestra://<pool-uuid>/<vm-uuid>`. |
 | `poolID` / `poolName` | `string` | Pool to create the VM in. Falls back to the template's pool. |
 | `templateID` / `templateName` | `string` | VM template to clone. |
-| `namePrefix` | `string` | **Required.** Prefix for the VM name in Xen Orchestra. |
+| `namePrefix` | `string` | **Deprecated**, removed in v1.2: set the `XOCluster` [`vmNaming`](xocluster.md#vmnaming) instead. Used only when the `XOCluster` sets no `vmNaming`; see [VM naming](../../guides/vm-naming.md#migrating-from-nameprefix) for the name it produces. |
 | `networkConfig` | `NetworkConfig` | Interfaces, IP filtering, and guest network config. |
 | `resourceSet` | `ResourceSet` | vCPUs, memory, disk. |
 | `failureDomain` | `*string` | Failure domain this machine belongs to. |
@@ -55,6 +55,7 @@ Leaving `bootstrap` unset is the same as `format: passthrough`.
 | Field | Type | Description |
 |---|---|---|
 | `ready` | `bool` | The VM is up and the node has joined. |
+| `vmName` | `string` | The VM's name in Xen Orchestra, recorded before the VM is created and never changed afterwards. See [VM naming](../../guides/vm-naming.md). |
 | `providerID` | `*string` | The VM's Xen Orchestra provider ID. |
 | `addresses` | `[]corev1.NodeAddress` | The VM's addresses, read through the guest agent. |
 | `initialization.provisioned` | `bool` | Part of the CAPI contract. |

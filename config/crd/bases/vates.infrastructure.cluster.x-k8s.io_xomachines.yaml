@@ -20,6 +20,9 @@ spec:
     - jsonPath: .status.ready
       name: Ready
       type: string
+    - jsonPath: .status.vmName
+      name: VMName
+      type: string
     - jsonPath: .status.providerID
       name: ProviderID
       priority: 1
@@ -134,7 +137,15 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               namePrefix:
-                description: NamePrefix is the prefix for the VM name.
+                description: |-
+                  NamePrefix is deprecated and will be removed in v1.2; use the XOCluster
+                  spec.vmNaming instead.
+
+                  Deprecated: set XOCluster spec.vmNaming. Kept for backward
+                  compatibility: when the XOCluster sets no vmNaming, the VM is named
+                  from this prefix, the cluster name and the Machine suffix, as before.
+                  When the XOCluster sets vmNaming, this field is ignored and a warning
+                  event is emitted.
                 type: string
               networkConfig:
                 description: NetworkConfig specifies the network configuration for
@@ -275,8 +286,6 @@ spec:
                 description: TemplateName is the XO VM template name to clone (alternative
                   to TemplateID).
                 type: string
-            required:
-            - namePrefix
             type: object
           status:
             description: XOMachineStatus defines the observed state of XOMachine.
@@ -383,6 +392,12 @@ spec:
                 description: Ready indicates the VM is ready and the Kubernetes node
                   has joined the cluster.
                 type: boolean
+              vmName:
+                description: |-
+                  VMName is the name given to the VM in Xen Orchestra. It is computed
+                  once, before the VM is created, and never changes afterwards, even when
+                  the naming configuration changes or the VM is renamed in Xen Orchestra.
+                type: string
             type: object
         required:
         - metadata

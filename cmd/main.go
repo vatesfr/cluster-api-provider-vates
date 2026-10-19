@@ -263,9 +263,10 @@ func main() {
 	}
 
 	if err := (&controller.XOMachineReconciler{
-		Client:  mgr.GetClient(),
-		Scheme:  mgr.GetScheme(),
-		XoCreds: &xoCreds,
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		XoCreds:  &xoCreds,
+		Recorder: mgr.GetEventRecorder("xomachine-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to create controller", "controller", "xomachine")
 		os.Exit(1)
