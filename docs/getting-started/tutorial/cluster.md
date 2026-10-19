@@ -73,18 +73,35 @@ spec:
 
 Seven objects, and the references between them are the whole story:
 
-| Object | Role |
-|---|---|
-| `Cluster` | the logical cluster: its networking, and the two references below |
-| `XOCluster` | the infrastructure side: the control plane endpoint, the load balancer, the addons |
-| `KubeadmControlPlane` | how many control plane nodes, and their kubeadm configuration |
-| `KubeadmConfigTemplate` | the bootstrap configuration of the worker nodes |
-| `MachineDeployment` | the worker group |
-| `MachineHealthCheck` (×2) | auto-remediation, one per group |
+| Object | Provided by | Role |
+|---|---|---|
+| `Cluster` | Cluster API | the logical cluster: its networking, and the two references below |
+| `XOCluster` | vates-capi | the infrastructure side: the control plane endpoint, the load balancer, the addons |
+| `KubeadmControlPlane` | the **control plane provider** | how many control plane nodes, and their kubeadm configuration |
+| `KubeadmConfigTemplate` | the **bootstrap provider** | the bootstrap configuration of the worker nodes |
+| `MachineDeployment` | Cluster API | the worker group |
+| `MachineHealthCheck` (×2) | Cluster API | auto-remediation, one per group |
+
+!!! note "The control plane and bootstrap objects come from their providers"
+
+    This tutorial uses the **kubeadm** flow, so the two objects above are
+    kubeadm's. Swap them for the ones your flow provides and nothing else
+    changes — the `Cluster`, `XOCluster`, `XOMachineTemplate`, `MachineDeployment`
+    and `MachineHealthCheck` stay exactly as they are:
+
+    | Flow | control plane object | bootstrap object |
+    |---|---|---|
+    | kubeadm | `KubeadmControlPlane` | `KubeadmConfigTemplate` |
+    | Talos | `TalosControlPlane` | `TalosConfigTemplate` |
+    | Vates Kube OS | `VatesControlPlane` | `VatesBootstrapConfigTemplate` |
+
+    That is the whole point of the design: the infrastructure provider answers
+    *where* a node runs, and knows nothing about *how* it joins. See
+    [The three providers](../../concept/providers.md).
 
 The wiring, one line per reference:
 
-- `Cluster.controlPlaneRef` → the `KubeadmControlPlane`
+- `Cluster.controlPlaneRef` → the control plane object (`KubeadmControlPlane` here)
 - `Cluster.infrastructureRef` → the `XOCluster`
 - `KubeadmControlPlane.machineTemplate.infrastructureRef` → the control plane `XOMachineTemplate`
 - `MachineDeployment.template.spec.infrastructureRef` → the worker `XOMachineTemplate`
