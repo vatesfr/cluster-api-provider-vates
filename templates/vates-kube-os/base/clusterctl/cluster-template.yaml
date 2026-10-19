@@ -157,7 +157,7 @@ spec:
           - networkID: ${XO_NETWORK_UUID}
 ---
 apiVersion: bootstrap.cluster.x-k8s.io/v1alpha1
-kind: VatesBootstrapConfigTemplate
+kind: VatesConfigTemplate
 metadata:
   name: ${CLUSTER_NAME}-cp
   namespace: ${NAMESPACE}
@@ -180,7 +180,7 @@ spec:
         provider: external
 ---
 apiVersion: bootstrap.cluster.x-k8s.io/v1alpha1
-kind: VatesBootstrapConfigTemplate
+kind: VatesConfigTemplate
 metadata:
   name: ${CLUSTER_NAME}-worker
   namespace: ${NAMESPACE}
@@ -212,7 +212,7 @@ spec:
       name: ${CLUSTER_NAME}-cp
     bootstrapConfigTemplateRef:
       apiVersion: bootstrap.cluster.x-k8s.io/v1alpha1
-      kind: VatesBootstrapConfigTemplate
+      kind: VatesConfigTemplate
       name: ${CLUSTER_NAME}-cp
 ---
 apiVersion: cluster.x-k8s.io/v1beta2
@@ -230,7 +230,7 @@ spec:
       bootstrap:
         configRef:
           apiGroup: bootstrap.cluster.x-k8s.io
-          kind: VatesBootstrapConfigTemplate
+          kind: VatesConfigTemplate
           name: ${CLUSTER_NAME}-worker
       infrastructureRef:
         apiGroup: vates.infrastructure.cluster.x-k8s.io

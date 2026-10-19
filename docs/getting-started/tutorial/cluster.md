@@ -93,7 +93,7 @@ Seven objects, and the references between them are the whole story:
     |---|---|---|
     | kubeadm | `KubeadmControlPlane` | `KubeadmConfigTemplate` |
     | Talos | `TalosControlPlane` | `TalosConfigTemplate` |
-    | Vates Kube OS | `VatesControlPlane` | `VatesBootstrapConfigTemplate` |
+    | Vates Kube OS | `VatesControlPlane` | `VatesConfigTemplate` |
 
     That is the whole point of the design: the infrastructure provider answers
     *where* a node runs, and knows nothing about *how* it joins. See
