@@ -48,6 +48,11 @@ bootstrap configuration, and reports back when they are ready.
 .arch-diagram .line { stroke: currentColor; stroke-width: 1.6; opacity: 0.75; fill: none; }
 .arch-diagram .tip { fill: currentColor; opacity: 0.75; }
 </style>
+<defs>
+  <marker id="arch-tip" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <path d="M0,0 L10,5 L0,10 Z" fill="currentColor" opacity="0.75"/>
+  </marker>
+</defs>
 <rect class="grp" x="20" y="80" width="860" height="485" rx="16"/>
 <text class="cap" x="36" y="72">MANAGEMENT CLUSTER</text>
 <rect class="box" x="340" y="16" width="220" height="44" rx="10"/>
@@ -90,8 +95,7 @@ bootstrap configuration, and reports back when they are ready.
 <text class="sub" x="330" y="437" text-anchor="middle">resource, one per Machine</text>
 <line class="line" x1="330" y1="446" x2="330" y2="463"/>
 <path class="tip" d="M334,463 L330,470 L326,463 Z"/>
-<line class="line" x1="730" y1="374" x2="560" y2="463"/>
-<path class="tip" d="M564,463 L560,470 L556,463 Z"/>
+<line class="line" x1="730" y1="374" x2="560" y2="470" marker-end="url(#arch-tip)"/>
 <text class="sub" x="660" y="412" text-anchor="middle">reads</text>
 <rect class="box" x="280" y="470" width="340" height="80" rx="10"/>
 <image xlink:href="assets/logos/vates-planet.png" x="300" y="490" width="40" height="40"/>
