@@ -64,7 +64,7 @@ nav:
       - getting-started/installation.md
       - getting-started/quickstart.md
       - "Tutorial: a cluster from A to Z":
-          - Setup: getting-started/tutorial/index.md
+          - Preparation: getting-started/tutorial/preparation.md
           - The objects: getting-started/tutorial/cluster.md
           - Apply and run: getting-started/tutorial/run.md
   - Guides:

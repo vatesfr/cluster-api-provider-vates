@@ -71,6 +71,29 @@ spec:
 
 ## 6. The cluster objects
 
+Seven objects, and the references between them are the whole story:
+
+| Object | Role |
+|---|---|
+| `Cluster` | the logical cluster: its networking, and the two references below |
+| `XOCluster` | the infrastructure side: the control plane endpoint, the load balancer, the addons |
+| `KubeadmControlPlane` | how many control plane nodes, and their kubeadm configuration |
+| `KubeadmConfigTemplate` | the bootstrap configuration of the worker nodes |
+| `MachineDeployment` | the worker group |
+| `MachineHealthCheck` (×2) | auto-remediation, one per group |
+
+The wiring, one line per reference:
+
+- `Cluster.controlPlaneRef` → the `KubeadmControlPlane`
+- `Cluster.infrastructureRef` → the `XOCluster`
+- `KubeadmControlPlane.machineTemplate.infrastructureRef` → the control plane `XOMachineTemplate`
+- `MachineDeployment.template.spec.infrastructureRef` → the worker `XOMachineTemplate`
+- `MachineDeployment.template.spec.bootstrap.configRef` → the `KubeadmConfigTemplate`
+
+From there, Cluster API creates one `Machine` per node, and vates-capi creates
+one `XOMachine` per `Machine` — which becomes one VM. The objects below are the
+whole cluster; nothing else is needed.
+
 ```yaml title="cluster.yaml"
 apiVersion: cluster.x-k8s.io/v1beta2
 kind: Cluster
