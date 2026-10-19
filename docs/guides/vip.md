@@ -31,7 +31,7 @@ VIP within seconds.
 The address is set once, on the cluster, as
 `XOCluster.spec.controlPlaneEndpoint.host`. That is also the `CP_HOST` you export
 when you generate a cluster, as in the
-[tutorial](../getting-started/tutorial.md).
+[tutorial](../getting-started/tutorial/index.md).
 
 ## Enabling it
 
@@ -212,7 +212,7 @@ from the interface.
 ## Where next
 
 - The end-to-end walkthrough that sets `CP_HOST` and `CP_LB`:
-  [Tutorial](../getting-started/tutorial.md).
+  [Tutorial](../getting-started/tutorial/index.md).
 - The IPAM pool that must not contain the VIP: [IPAM](ipam.md).
 - The `cloudinit` declaration and what it unlocks:
   [Bootstrap payload](../reference/bootstrap.md).
