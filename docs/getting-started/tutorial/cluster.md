@@ -9,6 +9,15 @@ reference the templates by name.
 An `XOMachineTemplate` is the stencil vates-capi clones a VM from. Two of them:
 one for the control plane, one for the workers. They differ only in `namePrefix`.
 
+| Field | What it decides |
+|---|---|
+| `templateID` | which XO template is cloned (its UUID, or `templateName` instead) |
+| `poolID` | where the VM is created (`poolName` also works) |
+| `networkConfig.networks` | which XO networks the VM's interfaces are attached to |
+| `resourceSet` | the VM's size: CPUs, memory, and the disk it is grown to |
+| `bootstrap.format` | how the payload is handled: `cloudinit` here, `passthrough` for Talos |
+| `networkConfig.addressesFromPools` | an IPAM pool to take the address from, instead of DHCP |
+
 ```yaml title="machine-templates.yaml"
 apiVersion: vates.infrastructure.cluster.x-k8s.io/v1beta2
 kind: XOMachineTemplate
@@ -59,15 +68,6 @@ spec:
         networks:
           - networkID: <network-uuid>
 ```
-
-| Field | What it decides |
-|---|---|
-| `templateID` | which XO template is cloned (its UUID, or `templateName` instead) |
-| `poolID` | where the VM is created (`poolName` also works) |
-| `networkConfig.networks` | which XO networks the VM's interfaces are attached to |
-| `resourceSet` | the VM's size: CPUs, memory, and the disk it is grown to |
-| `bootstrap.format` | how the payload is handled: `cloudinit` here, `passthrough` for Talos |
-| `networkConfig.addressesFromPools` | an IPAM pool to take the address from, instead of DHCP |
 
 ## 6. The cluster objects
 
