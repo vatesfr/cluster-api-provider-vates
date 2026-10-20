@@ -18,7 +18,7 @@ providers instead of the usual pair:
 
 | Provider | CRDs | Owns |
 |---|---|---|
-| **CAVBP** (bootstrap) | `VatesBootstrapConfig` (+ `Template`) | turns a `Machine` into the `vates-node.yaml` user-data the node reads at first boot (role, Kubernetes version, endpoint, node name, PKI, join material) |
+| **CAVBP** (bootstrap) | `VatesConfig` (+ `Template`) | turns a `Machine` into the `vates-node.yaml` user-data the node reads at first boot (role, Kubernetes version, endpoint, node name, PKI, join material) |
 | **CAVCPP** (control plane) | `VatesControlPlane` (+ `Template`) | the cluster certificate authority, and the control plane Machines |
 
 Both ship from one module — `vates-kube-os-capi-providers` — and run the same
@@ -33,7 +33,7 @@ makes the VM and attaches the config drive holding `vates-node.yaml`.
 | Node OS | a general-purpose cloud image | an immutable image, `vates-node.yaml` on the config drive |
 | Who runs kubeadm | cloud-init, inside the guest | the node image itself, from the document |
 | Kubernetes binaries | installed in the image at build time | fetched by the node at first boot |
-| Bootstrap CRD | `KubeadmConfig` (+ `Template`) | `VatesBootstrapConfig` (+ `Template`) |
+| Bootstrap CRD | `KubeadmConfig` (+ `Template`) | `VatesConfig` (+ `Template`) |
 | Control plane CRD | `KubeadmControlPlane` | `VatesControlPlane` |
 
 The infra side is identical: an `XOMachineTemplate` with `bootstrapProvider:
@@ -157,7 +157,7 @@ spec:
           - networkID: <your-xo-network-uuid>
 ---
 apiVersion: bootstrap.cluster.x-k8s.io/v1alpha1
-kind: VatesBootstrapConfigTemplate
+kind: VatesConfigTemplate
 metadata:
   name: my-cluster-cp
 spec:
@@ -191,13 +191,13 @@ spec:
       name: my-cluster-cp
     bootstrapConfigTemplateRef:
       apiVersion: bootstrap.cluster.x-k8s.io/v1alpha1
-      kind: VatesBootstrapConfigTemplate
+      kind: VatesConfigTemplate
       name: my-cluster-cp
 ```
 
 ## The bootstrap config
 
-`VatesBootstrapConfigSpec` mirrors the OS's own `vatescfg.Config` field for
+`VatesConfigSpec` mirrors the OS's own `vatescfg.Config` field for
 field: that package stays the single source of truth for semantics and
 validation, and the provider encodes the spec into it before a node ever sees
 the document. The fields you are most likely to set:
@@ -221,7 +221,7 @@ do not set it by hand.
 ## Verify
 
 ```shell
-kubectl -n <ns> get vatesbootstrapconfigs        # one per Machine
+kubectl -n <ns> get vatesconfigs        # one per Machine
 kubectl -n <ns> get vatescontrolplane <name>     # control plane ready/available replicas
 kubectl -n <ns> get secrets | grep <cluster>     # the per-machine bootstrap Secret
 ```

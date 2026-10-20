@@ -77,7 +77,7 @@ follows a `base/` + `overlays/` layout:
   `clusterclass/`: the Talos control plane provider does not support
   ClusterClass / managed topology yet, so these are flat templates.
 - **Vates Kube OS** (experimental): `vates-kube-os/base/clusterctl/` with
-  `VatesControlPlane` + `VatesBootstrapConfigTemplate` on the immutable Vates
+  `VatesControlPlane` + `VatesConfigTemplate` on the immutable Vates
   Kube OS image. The node reads a single `vates-node.yaml` document from the
   config drive, so the payload is neither cloud-init nor a machine
   configuration. It is committed here to keep the node-OS flow reproducible and

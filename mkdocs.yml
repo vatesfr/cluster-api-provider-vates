@@ -63,7 +63,10 @@ nav:
       - getting-started/prerequisites.md
       - getting-started/installation.md
       - getting-started/quickstart.md
-      - getting-started/tutorial.md
+      - "Tutorial: a cluster from A to Z":
+          - Preparation: getting-started/tutorial/preparation.md
+          - The objects: getting-started/tutorial/cluster.md
+          - Apply and run: getting-started/tutorial/run.md
   - Guides:
       - Providers:
           - kubeadm: guides/providers/kubeadm.md

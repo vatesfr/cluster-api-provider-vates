@@ -27,7 +27,7 @@ run several clusters that should stay alike and be upgradeable in one edit.
 ## The shipped classes
 
 The kubeadm flow ships two classes, mirroring the two AlmaLinux image variants
-([from-scratch or pre-filled](../getting-started/tutorial.md)):
+([from-scratch or pre-filled](../getting-started/tutorial/index.md)):
 
 | ClusterClass | Worker class | Image | Bootstrap |
 |---|---|---|---|
