@@ -48,6 +48,56 @@ kubectl get crd xomachines.vates.infrastructure.cluster.x-k8s.io \
   -o jsonpath='{.spec.versions[*].name}{"\n"}'
 ```
 
+### VM naming: `namePrefix` replaced by `vmNaming`
+
+The `XOMachine` `spec.namePrefix` is removed. VMs are now named
+`<DISTRIBUTION>-<cluster>-<ROLE>-<ID>` by default, e.g.
+`KUBEADM-my-cluster-CP-7n62g`, or from the `XOCluster` `spec.vmNaming`. See
+[VM naming](../guides/vm-naming.md). This only affects clusters created with a
+v1.x release candidate: `XOMachine` has never shipped in a stable release.
+
+Upgrading the provider renames no VM and rolls out no machine:
+
+- **Existing VMs keep their names.** Only the VMs created afterwards (scale up,
+  remediation, upgrade) get the new names, so a cluster mixes both namings until
+  its VMs are replaced. Set `vmNaming` on the `XOCluster` first to choose them.
+- **`namePrefix` disappears from the stored objects.** The API server drops
+  fields that are no longer in the schema when it reads an object, so the
+  `XOMachineTemplate`s are unchanged as far as Cluster API is concerned.
+- **Remove `namePrefix` from your manifests.** `kubectl apply` rejects an
+  unknown field by default.
+- **Remove the `namePrefix` patches from your ClusterClasses**, e.g. the
+  `vmNamePrefix` variable and its `cpNamePrefixPatch` / `workerNamePrefixPatch`
+  patches of the kubeadm class shipped before. A patch on a path that no longer
+  exists fails, and blocks the topology of every Cluster of the class. Removing
+  them rolls out no machine: the rendered templates no longer contain
+  `namePrefix` either way. Also remove the variable from the Clusters.
+
+Three more changes:
+
+- **The `XOCluster` must be readable before a VM is named.** The controller has
+  to know whether it sets `vmNaming`. While it cannot be read, no VM is created:
+  the `XOMachine` gets a `VMNameUnresolved` condition and the reconcile is
+  retried.
+- **The VM name is recorded** in the `XOMachine` `status.vmName` before the VM
+  is created, and shown by `kubectl get xomachines`. VMs created before the
+  upgrade have no recorded name.
+- **A `DuplicateVMName` `Warning` event** reports a VM created with a name
+  another VM already has. The provider's role grants `create` and `patch` on
+  `events.k8s.io` events.
+
+!!! note "Duplicate names are reported, not prevented"
+
+    Xen Orchestra does not enforce unique VM names, and a VM is still created when
+    another VM already has its name. Control plane names never collide within a
+    cluster. Worker names can: all the workers of a cluster share one prefix, and
+    the 5-character Machine suffix has about 14.3 million values. The chance that
+    two workers present at the same time share a name is about n² / 28.7 million
+    for n workers: 0.03 % for 100 workers, 0.9 % for 500. A `DuplicateVMName`
+    event reports it, except when two such VMs are created at the same instant.
+    A VM named after a whole `Machine` name, because the name has no random
+    suffix, never collides within a cluster.
+
 !!! tip "Read the release notes first"
 
     The changelog of each release is grouped by category — Features, Bug fixes,

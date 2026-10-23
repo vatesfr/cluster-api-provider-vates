@@ -42,7 +42,6 @@ export CP_HOST=<your-cp-vip>         # control plane VIP
 export CP_PORT=6443
 export CP_LB=kube-vip
 export CP_SUBNET=16
-export VM_NAME_PREFIX=my-cluster
 export XO_TEMPLATE_UUID=<your-vm-template-uuid>   # no pool ID, must be bootable
 export XO_POOL_UUID=<your-pool-uuid>
 export XO_NETWORK_UUID=<your-network-uuid>

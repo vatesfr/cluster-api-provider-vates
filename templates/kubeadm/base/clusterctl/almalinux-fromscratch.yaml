@@ -3,7 +3,6 @@
 #   CP_PORT             - API server port (e.g. 6443)
 #   CP_LB               - Load balancer type: "kube-vip" or "" (empty = no LB)
 #   CP_SUBNET           - CIDR subnet mask for the VIP (e.g. 16, 24)
-#   VM_NAME_PREFIX      - Prefix for VM names (e.g. my-cluster)
 #   XO_TEMPLATE_UUID    - UUID of the AlmaLinux/RHEL VM template (almalinux-fromscratch)
 #   XO_POOL_UUID        - UUID of your Xen Orchestra pool
 #   XO_NETWORK_UUID     - UUID of your Xen Orchestra network
@@ -68,7 +67,6 @@ spec:
       bootstrapProvider: kubeadm
       bootstrap:
         format: cloudinit
-      namePrefix: ${VM_NAME_PREFIX}-cp
       templateID: ${XO_TEMPLATE_UUID}
       poolID: ${XO_POOL_UUID}
       resourceSet:
@@ -90,7 +88,6 @@ spec:
       bootstrapProvider: kubeadm
       bootstrap:
         format: cloudinit
-      namePrefix: ${VM_NAME_PREFIX}-worker
       templateID: ${XO_TEMPLATE_UUID}
       poolID: ${XO_POOL_UUID}
       resourceSet:

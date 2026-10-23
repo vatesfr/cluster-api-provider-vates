@@ -226,6 +226,34 @@ spec:
                         maxItems: 64
                         type: array
                         x-kubernetes-list-type: set
+                      vmNaming:
+                        description: |-
+                          VMNaming sets the names of the cluster's VMs in Xen Orchestra. When
+                          unset, a VM is named <DISTRIBUTION>-<cluster>-<ROLE>-<ID>, e.g.
+                          "TALOS-my-cluster-CP-7n62g". DISTRIBUTION is the kind of the Machine's
+                          bootstrap configuration without its "Config" suffix, upper-cased
+                          (TalosConfig gives TALOS, KubeadmConfig gives KUBEADM), or CAPI when the
+                          Machine has none. ROLE is CP or WORKER.
+
+                          The name is computed once, when the VM is created, and never changes
+                          afterwards: editing this field (or the ClusterClass variables that feed
+                          it) updates the XOCluster in place, rolls out no machine and renames no
+                          existing VM. Only the VMs created afterwards get the new names.
+                        properties:
+                          controlPlanePrefix:
+                            description: ControlPlanePrefix is the prefix of the control
+                              plane VM names.
+                            minLength: 1
+                            type: string
+                          workerPrefix:
+                            description: WorkerPrefix is the prefix of the worker
+                              VM names.
+                            minLength: 1
+                            type: string
+                        required:
+                        - controlPlanePrefix
+                        - workerPrefix
+                        type: object
                     type: object
                 required:
                 - spec

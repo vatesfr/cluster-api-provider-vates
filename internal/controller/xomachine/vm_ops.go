@@ -28,7 +28,16 @@ import (
 	infrastructurev1beta2 "github.com/vatesfr/cluster-api-provider-vates/api/v1beta2"
 )
 
-func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, xoMachine *infrastructurev1beta2.XOMachine, poolID uuid.UUID, templateID uuid.UUID, cloudConfig string, networkConfig *string, vmName string, providerName string) (*payloads.VM, error) {
+// DuplicateNameFunc is called by CreateVM when other VMs, not created for this
+// machine, already carry the name of the VM it is about to create. count is how
+// many such VMs were found.
+type DuplicateNameFunc func(vmName string, count int)
+
+// CreateVM creates the machine's VM, or adopts the one an interrupted create
+// left behind. Xen Orchestra does not enforce unique names: when other VMs
+// already carry vmName, the VM is created anyway and onDuplicateName, when not
+// nil, is called so the caller can warn about it.
+func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClient, xoMachine *infrastructurev1beta2.XOMachine, poolID uuid.UUID, templateID uuid.UUID, cloudConfig string, networkConfig *string, vmName string, providerName string, onDuplicateName DuplicateNameFunc) (*payloads.VM, error) {
 	logger := log.FromContext(ctx)
 
 	// The unique marker this provider writes into the VM at creation. It is
@@ -61,7 +70,10 @@ func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClie
 	// VM is created. The first is left untagged and Halted, unreferenced: the
 	// orphan this provider used to leak (see CAVP/NEXT.md). Adopting a VM with
 	// the same name, not owned by another machine, is what closes that.
-	vm := findAdoptableVM(ctx, xoClient, vmName, marker)
+	vm, foreign := findAdoptableVM(ctx, xoClient, vmName, marker)
+	if vm == nil && foreign > 0 && onDuplicateName != nil {
+		onDuplicateName(vmName, foreign)
+	}
 	if vm != nil {
 		logger.Info("adopting an existing VM with the same name instead of creating a second",
 			"name", vmName, "id", vm.ID.String())
@@ -77,7 +89,7 @@ func CreateVM(ctx context.Context, c client.Client, xoClient *xok8scommon.XoClie
 				// The create may still have succeeded server-side. Look once
 				// more before giving up, so the retry adopts rather than
 				// duplicating.
-				if vm = findAdoptableVM(ctx, xoClient, vmName, marker); vm != nil {
+				if vm, _ = findAdoptableVM(ctx, xoClient, vmName, marker); vm != nil {
 					logger.Info("adopted the VM a failed create left behind",
 						"name", vmName, "id", vm.ID.String())
 				} else {
@@ -578,19 +590,21 @@ func vmMarker(xoMachine *infrastructurev1beta2.XOMachine) string {
 // up.
 //
 // The name label filters the list down (the VM was created with this name); the
-// marker, matched exactly, is what decides.
-func findAdoptableVM(ctx context.Context, xoClient *xok8scommon.XoClient, vmName, marker string) *payloads.VM {
+// marker, matched exactly, is what decides. The same lookup also returns how
+// many other VMs already carry the name, so a duplicate name costs no extra
+// call.
+func findAdoptableVM(ctx context.Context, xoClient *xok8scommon.XoClient, vmName, marker string) (*payloads.VM, int) {
 	if marker == "" {
-		return nil
+		return nil, 0
 	}
 	logger := log.FromContext(ctx)
-	vms, err := xoClient.Client.VM().GetAll(ctx, 0, "name_label:"+vmName)
+	vms, err := xoClient.Client.VM().GetAll(ctx, 0, nameLabelFilter(vmName))
 	if err != nil {
 		logger.Info("could not list VMs while looking for an adoptable one; creating a new VM",
 			"name", vmName, "error", err)
-		return nil
+		return nil, 0
 	}
-	return adoptableVM(vms, vmName, marker)
+	return adoptableVM(vms, vmName, marker), foreignVMCount(vms, vmName, marker)
 }
 
 // adoptableVM returns the VM carrying this provider's marker, or nil. A name

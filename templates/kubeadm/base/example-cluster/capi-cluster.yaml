@@ -13,8 +13,6 @@ spec:
           host: ""
           port: 0
           subnet: 0
-      - name: vmNamePrefix
-        value: ""
       - name: controlPlaneLB
         value: ""
     controlPlane:

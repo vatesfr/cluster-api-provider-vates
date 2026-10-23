@@ -16,7 +16,6 @@
 # Required variables (export in environment):
 #   CP_VIP            - control plane VIP, served by kube-vip (e.g. 10.30.139.30)
 #   CP_SUBNET         - subnet mask of the VIP (e.g. 16)
-#   VM_NAME_PREFIX    - prefix for the VM names in Xen Orchestra (e.g. my-cluster)
 #   XO_TEMPLATE_UUID  - UUID of the Vates Kube OS VM template
 #   XO_POOL_UUID      - UUID of your Xen Orchestra pool
 #   XO_NETWORK_UUID   - UUID of your Xen Orchestra network
@@ -117,7 +116,6 @@ spec:
       # The infrastructure provider passes it through to the config drive
       # untouched: it is neither cloud-init nor a kubeadm payload.
       bootstrapProvider: vates
-      namePrefix: ${VM_NAME_PREFIX}-cp
       templateID: ${XO_TEMPLATE_UUID}
       poolID: ${XO_POOL_UUID}
       resourceSet:
@@ -141,7 +139,6 @@ spec:
   template:
     spec:
       bootstrapProvider: vates
-      namePrefix: ${VM_NAME_PREFIX}-worker
       templateID: ${XO_TEMPLATE_UUID}
       poolID: ${XO_POOL_UUID}
       resourceSet:

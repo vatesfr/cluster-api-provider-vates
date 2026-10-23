@@ -8,7 +8,6 @@ spec:
       bootstrapProvider: kubeadm
       bootstrap:
         format: cloudinit
-      namePrefix: cp
       templateID: <your-xo-template-uuid>
       poolID: <your-xo-pool-uuid>
       resourceSet:

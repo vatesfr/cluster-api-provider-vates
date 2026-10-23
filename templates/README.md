@@ -154,7 +154,6 @@ export CP_HOST=<your-cp-vip>
 export CP_PORT=6443
 export CP_LB=kube-vip
 export CP_SUBNET=16
-export VM_NAME_PREFIX=my-cluster
 export XO_TEMPLATE_UUID=<your-xo-template-uuid>
 export XO_POOL_UUID=<your-xo-pool-uuid>
 export XO_NETWORK_UUID=<your-xo-network-uuid>
@@ -172,7 +171,6 @@ Use `almalinux-prefilled.yaml` instead for the pre-baked template variant.
 ```bash
 export CP_VIP=<your-cp-vip>
 export CP_SUBNET=16
-export VM_NAME_PREFIX=my-cluster
 export XO_TEMPLATE_UUID=<your-xo-talos-template-uuid>
 export XO_POOL_UUID=<your-xo-pool-uuid>
 export XO_NETWORK_UUID=<your-xo-network-uuid>
@@ -205,7 +203,7 @@ following fields:
 | `spec.template.spec.templateID` | UUID of the VM template |
 | `spec.template.spec.poolID` | UUID of your Xen Orchestra pool |
 | `spec.topology.classRef.name` | ClusterClass variant to use (`vates-almalinux-prefilled` or `vates-almalinux-fromscratch`) |
-| `spec.topology.variables` | Control plane endpoint, VM name prefix, load balancer, replicas |
+| `spec.topology.variables` | Control plane endpoint, load balancer, replicas |
 
 These values are placeholders (`<your-xo-network-uuid>`, `<your-xo-template-uuid>`,
 `<your-xo-pool-uuid>`) and will differ in your environment.

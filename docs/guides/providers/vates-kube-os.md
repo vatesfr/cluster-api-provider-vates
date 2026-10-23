@@ -141,7 +141,6 @@ spec:
   template:
     spec:
       bootstrapProvider: vates      # the payload is vates-node.yaml, not cloud-init
-      namePrefix: my-cluster-cp
       templateID: <your-xo-template-uuid>
       poolID: <your-xo-pool-uuid>
       resourceSet:

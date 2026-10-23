@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/gofrs/uuid"
 	"github.com/vatesfr/xenorchestra-go-sdk/pkg/payloads"
 	xok8scommon "github.com/vatesfr/xenorchestra-k8s-common"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -137,8 +140,6 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, xoMachine *in
 		networkConfig = &doc
 	}
 
-	vmName := r.buildVMName(xoMachine, bsResult)
-
 	templateID, err := xomachine.ResolveTemplateID(ctx, xoClient, xoMachine.Spec.TemplateID, xoMachine.Spec.TemplateName)
 	if err != nil {
 		logger.Error(err, "Failed to find template", "templateID", xoMachine.Spec.TemplateID, "templateName", xoMachine.Spec.TemplateName)
@@ -169,7 +170,7 @@ func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, xoMachine *in
 		}
 		vm, err = xomachine.LookupExistingVM(ctx, r.Client, xoClient, xoMachine, vmID)
 	} else {
-		vm, err = xomachine.CreateVM(ctx, r.Client, xoClient, xoMachine, poolID, templateID, cloudConfig, networkConfig, vmName, xoMachine.Spec.BootstrapProvider)
+		vm, err = r.createVM(ctx, xoMachine, bsResult, xoClient, poolID, templateID, cloudConfig, networkConfig)
 	}
 	if err != nil {
 		return ctrl.Result{}, err
@@ -231,36 +232,115 @@ func bootstrapBehavior(xoMachine *infrastructurev1beta2.XOMachine) bootstrap.Beh
 	return bootstrap.Behavior{Format: format}
 }
 
-func (r *XOMachineReconciler) buildVMName(xoMachine *infrastructurev1beta2.XOMachine, bsResult bootstrap.ResolveBootstrapDataResult) string {
-	if bsResult.Machine == nil {
-		return xoMachine.Spec.NamePrefix
+// createVM names the machine's VM and creates it. Another VM already carrying
+// the name does not prevent the creation -- Xen Orchestra does not enforce
+// unique names -- but is reported as a Warning event.
+func (r *XOMachineReconciler) createVM(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, bsResult bootstrap.ResolveBootstrapDataResult,
+	xoClient *xok8scommon.XoClient, poolID, templateID uuid.UUID, cloudConfig string, networkConfig *string) (*payloads.VM, error) {
+	vmName, err := r.resolveVMName(ctx, xoMachine, bsResult)
+	if err != nil {
+		return nil, err
 	}
-	cn := bsResult.Machine.Labels["cluster.x-k8s.io/cluster-name"]
-	if cn == "" {
-		return xoMachine.Spec.NamePrefix
-	}
-	role := ""
-	np := xoMachine.Spec.NamePrefix
-	for _, s := range []string{"-cp", "-worker"} {
-		if strings.HasSuffix(np, s) {
-			role = s
-			np = strings.TrimSuffix(np, s)
-			break
-		}
-	}
-	if suffix := lastDashSegment(bsResult.Machine.Name); suffix != "" {
-		role += "-" + suffix
-	}
-	return np + cn + role
+	return xomachine.CreateVM(ctx, r.Client, xoClient, xoMachine, poolID, templateID, cloudConfig, networkConfig, vmName, xoMachine.Spec.BootstrapProvider,
+		func(vmName string, count int) {
+			log.FromContext(ctx).Info("Creating VM although other VMs already have its name", "vmName", vmName, "count", count)
+			r.warn(xoMachine, "DuplicateVMName", "CreateVM",
+				"%d other VM(s) in Xen Orchestra are already named %q; the VM is created anyway", count, vmName)
+		})
 }
 
-// lastDashSegment returns the last dash-separated segment of a name, e.g.
-// "demo3-cp-7n62g" -> "7n62g". Used to make VM names unique per Machine.
-func lastDashSegment(name string) string {
-	if i := strings.LastIndex(name, "-"); i >= 0 {
-		return name[i+1:]
+// resolveVMName returns the name of the VM to create.
+//
+// The name is computed once and recorded in status.vmName BEFORE the VM is
+// created; every later attempt reuses it. The naming configuration lives in
+// the XOCluster, which can change at any time: without a recorded name, a
+// retry after a create whose result was lost could compute another name, miss
+// the VM it created (the adoption lookup searches by name) and create a second
+// one. Once the VM exists, the name is never looked at again.
+func (r *XOMachineReconciler) resolveVMName(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, bsResult bootstrap.ResolveBootstrapDataResult) (string, error) {
+	if xoMachine.Status.VMName != "" {
+		return xoMachine.Status.VMName, nil
 	}
-	return ""
+
+	vmName, err := r.computeVMName(ctx, xoMachine, bsResult)
+	if err != nil {
+		return "", xomachine.WithConditionUpdate(ctx, r.Client, xoMachine, err, metav1.ConditionFalse, "VMNameUnresolved")
+	}
+
+	xoMachine.Status.VMName = vmName
+	if err := r.Status().Update(ctx, xoMachine); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to record the VM name", "vmName", vmName)
+		return "", err
+	}
+	log.FromContext(ctx).Info("Recorded VM name", "vmName", vmName)
+	return vmName, nil
+}
+
+// computeVMName computes the VM name: from the XOCluster spec.vmNaming when
+// it is set, and as <DISTRIBUTION>-<cluster>-<ROLE>-<ID> otherwise.
+//
+// The XOCluster must be readable: naming the VM without knowing whether it
+// sets vmNaming would record a name the configuration did not ask for, for
+// good.
+//
+// An XOMachine without an owner Machine (inline bootstrap data, outside the
+// Cluster API flow) has no Machine suffix: its VM is named after the XOMachine.
+func (r *XOMachineReconciler) computeVMName(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, bsResult bootstrap.ResolveBootstrapDataResult) (string, error) {
+	clusterName := xoMachine.Labels[clusterv1.ClusterNameLabel]
+	if clusterName == "" && bsResult.Machine != nil {
+		clusterName = bsResult.Machine.Labels[clusterv1.ClusterNameLabel]
+	}
+
+	var naming *infrastructurev1beta2.VMNamingSpec
+	if clusterName != "" {
+		xoCluster, err := xomachine.GetXOCluster(ctx, r.Client, xoMachine.Namespace, clusterName)
+		if err != nil {
+			return "", fmt.Errorf("failed to read the XOCluster to name the VM: %w", err)
+		}
+		if xoCluster != nil {
+			naming = xoCluster.Spec.VMNaming
+		}
+	}
+
+	machine := bsResult.Machine
+	if machine == nil {
+		if naming != nil {
+			return "", errors.New("the XOCluster spec.vmNaming names the VM after its owner Machine, and the XOMachine has none")
+		}
+		return xoMachine.Name, nil
+	}
+
+	controlPlane := isControlPlane(xoMachine, machine)
+	if naming != nil {
+		return xomachine.VMNameFromNaming(naming, controlPlane, machine.Name)
+	}
+	if clusterName == "" {
+		return "", errors.New("the Machine has no cluster name label to name the VM after")
+	}
+	return xomachine.DefaultVMName(machine.Spec.Bootstrap.ConfigRef.Kind, clusterName, controlPlane, machine.Name), nil
+}
+
+// isControlPlane reports whether the machine is a control plane node, from the
+// Cluster API control plane label on the XOMachine or on its Machine.
+func isControlPlane(xoMachine *infrastructurev1beta2.XOMachine, machine *clusterv1.Machine) bool {
+	if _, ok := xoMachine.Labels[clusterv1.MachineControlPlaneLabel]; ok {
+		return true
+	}
+	if machine != nil {
+		if _, ok := machine.Labels[clusterv1.MachineControlPlaneLabel]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// warn emits a Warning event on the XOMachine. It is a no-op without a
+// recorder, as in unit tests.
+func (r *XOMachineReconciler) warn(xoMachine *infrastructurev1beta2.XOMachine, reason, action, note string, args ...any) {
+	if r.Recorder == nil {
+		return
+	}
+	r.Recorder.Eventf(xoMachine, nil, corev1.EventTypeWarning, reason, action, note, args...)
 }
 
 // tryFastPath returns a non-nil result when the VM already has a providerID

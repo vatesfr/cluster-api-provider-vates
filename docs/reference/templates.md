@@ -107,7 +107,6 @@ export CP_HOST=10.30.139.10
 export CP_PORT=6443
 export CP_LB=kube-vip
 export CP_SUBNET=16
-export VM_NAME_PREFIX=my-cluster
 export XO_TEMPLATE_UUID=<your-xo-template-uuid>
 export XO_POOL_UUID=<your-xo-pool-uuid>
 export XO_NETWORK_UUID=<your-xo-network-uuid>
@@ -121,7 +120,7 @@ clusterctl generate cluster my-cluster \
 Two variable families are substituted:
 
 - **Your variables**, declared at the top of each template: `CP_HOST`,
-  `CP_PORT`, `CP_LB`, `CP_SUBNET`, `VM_NAME_PREFIX`, and the XO UUIDs above.
+  `CP_PORT`, `CP_LB`, `CP_SUBNET`, and the XO UUIDs above.
   The Talos templates use `CP_VIP` / `TALOS_VERSION` instead of `CP_HOST` /
   `CP_LB`.
 - **clusterctl built-ins**, provided by the command: `CLUSTER_NAME` (the name
@@ -218,8 +217,8 @@ spec:
           - networkID: <your-xo-network-uuid>
 ```
 
-`patch-cluster.yaml` — the managed topology: control plane endpoint, VM name
-prefix, load balancer, and replica counts:
+`patch-cluster.yaml` — the managed topology: control plane endpoint, load
+balancer, and replica counts:
 
 ```yaml
 apiVersion: cluster.x-k8s.io/v1beta2
@@ -237,8 +236,6 @@ spec:
           host: <your-control-plane-ip>
           port: 6443
           subnet: 16
-      - name: vmNamePrefix
-        value: my-cluster
       - name: controlPlaneLB
         value: kube-vip
     controlPlane:

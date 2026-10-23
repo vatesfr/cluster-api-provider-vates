@@ -200,8 +200,6 @@ spec:
           host: <your-control-plane-ip>
           port: 6443
           subnet: <your-subnet-cidr-bits>
-      - name: vmNamePrefix
-        value: <your-vm-name-prefix>
       - name: controlPlaneLB
         value: kube-vip
     controlPlane:
@@ -248,7 +246,6 @@ export CP_HOST=<your-control-plane-ip>
 export CP_PORT=6443
 export CP_LB=kube-vip                 # or "" (empty = no LB)
 export CP_SUBNET=<your-subnet-cidr-bits>
-export VM_NAME_PREFIX=<your-vm-name-prefix>
 export XO_TEMPLATE_UUID=<your-xo-template-uuid>
 export XO_POOL_UUID=<your-xo-pool-uuid>
 export XO_NETWORK_UUID=<your-xo-network-uuid>

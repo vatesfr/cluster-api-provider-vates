@@ -21,7 +21,6 @@ metadata:
 spec:
   template:
     spec:                      # <- XOMachine.spec goes here
-      namePrefix: my-cluster-cp
       templateID: <your-vm-template-uuid>
       poolID: <your-xo-pool-uuid>
       resourceSet:
@@ -42,12 +41,11 @@ spec:
 Every field documented on [XOMachine](xomachine.md) is valid here, unchanged.
 Two things are worth repeating at the template level:
 
-!!! warning "`namePrefix` is required"
+!!! note "VM names are not set here"
 
-    `spec.template.spec.namePrefix` has no default and is validated as required.
-    It is the prefix the provider uses to name each VM in Xen Orchestra; the
-    control plane or deployment appends a unique suffix per node. Pick something
-    that distinguishes the role, e.g. `my-cluster-cp` and `my-cluster-worker`.
+    The VM names come from the `XOCluster` [`vmNaming`](xocluster.md#vmnaming),
+    or from the default naming when it is unset, not from the template: changing
+    them rolls out no machine. See [VM naming](../../guides/vm-naming.md).
 
 !!! tip "Declare the bootstrap format on the template"
 

@@ -90,7 +90,6 @@ var _ = Describe("Reconcile", func() {
 					ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", Finalizers: []string{xoMachineFinalizer}},
 					Spec: infrastructurev1beta2.XOMachineSpec{
 						TemplateName: "ubuntu",
-						NamePrefix:   "test",
 					},
 				},
 				&clusterv1.Machine{
@@ -119,7 +118,6 @@ var _ = Describe("Reconcile", func() {
 					ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
 					Spec: infrastructurev1beta2.XOMachineSpec{
 						TemplateName: "ubuntu",
-						NamePrefix:   "test",
 					},
 				},
 			).Build()
@@ -142,7 +140,6 @@ var _ = Describe("Reconcile", func() {
 					Spec: infrastructurev1beta2.XOMachineSpec{
 						TemplateID:    templateUUID.String(),
 						PoolID:        poolUUID.String(),
-						NamePrefix:    "test",
 						BootstrapData: "#cloud-config\n",
 					},
 				},
@@ -203,7 +200,6 @@ var _ = Describe("Reconcile", func() {
 				&infrastructurev1beta2.XOMachine{
 					ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
 					Spec: infrastructurev1beta2.XOMachineSpec{
-						NamePrefix: "test",
 						ProviderID: &providerID,
 					},
 					Status: infrastructurev1beta2.XOMachineStatus{
@@ -258,7 +254,6 @@ var _ = Describe("Reconcile", func() {
 					Spec: infrastructurev1beta2.XOMachineSpec{
 						TemplateID:    templateUUID.String(),
 						PoolID:        poolUUID.String(),
-						NamePrefix:    "test",
 						BootstrapData: "#cloud-config\n",
 						ResourceSet: &infrastructurev1beta2.ResourceSet{
 							DiskSize: "50Gi",
@@ -323,7 +318,6 @@ var _ = Describe("Reconcile", func() {
 					Spec: infrastructurev1beta2.XOMachineSpec{
 						TemplateID:        templateUUID.String(),
 						PoolID:            poolUUID.String(),
-						NamePrefix:        "test",
 						BootstrapData:     talosData,
 						BootstrapProvider: "talos",
 					},
@@ -389,7 +383,6 @@ var _ = Describe("Reconcile", func() {
 					Spec: infrastructurev1beta2.XOMachineSpec{
 						TemplateID:    templateUUID.String(),
 						PoolID:        poolUUID.String(),
-						NamePrefix:    "test",
 						BootstrapData: "#cloud-config\n",
 					},
 				},
@@ -450,7 +443,6 @@ var _ = Describe("Reconcile", func() {
 					Spec: infrastructurev1beta2.XOMachineSpec{
 						TemplateID:    templateUUID.String(),
 						PoolID:        poolUUID.String(),
-						NamePrefix:    "test",
 						BootstrapData: "#cloud-config\n",
 					},
 				},
@@ -525,7 +517,6 @@ var _ = Describe("Reconcile", func() {
 					},
 					Spec: infrastructurev1beta2.XOMachineSpec{
 						TemplateID: uuid.Must(uuid.NewV4()).String(),
-						NamePrefix: "test",
 					},
 					Status: infrastructurev1beta2.XOMachineStatus{
 						ProviderID: &providerID,
@@ -594,7 +585,6 @@ var _ = Describe("Reconcile", func() {
 					},
 					Spec: infrastructurev1beta2.XOMachineSpec{
 						TemplateID: uuid.Must(uuid.NewV4()).String(),
-						NamePrefix: "test",
 					},
 					Status: infrastructurev1beta2.XOMachineStatus{
 						ProviderID: &providerID,
@@ -671,7 +661,6 @@ var _ = Describe("Reconcile", func() {
 					},
 					Spec: infrastructurev1beta2.XOMachineSpec{
 						TemplateID: uuid.Must(uuid.NewV4()).String(),
-						NamePrefix: "test",
 					},
 					Status: infrastructurev1beta2.XOMachineStatus{
 						ProviderID: &providerID,
@@ -720,7 +709,6 @@ var _ = Describe("Reconcile", func() {
 					},
 					Spec: infrastructurev1beta2.XOMachineSpec{
 						TemplateID: uuid.Must(uuid.NewV4()).String(),
-						NamePrefix: "test",
 					},
 					Status: infrastructurev1beta2.XOMachineStatus{
 						ProviderID: &providerID,
@@ -761,7 +749,6 @@ var _ = Describe("Reconcile", func() {
 					},
 					Spec: infrastructurev1beta2.XOMachineSpec{
 						TemplateID: uuid.Must(uuid.NewV4()).String(),
-						NamePrefix: "test",
 					},
 					Status: infrastructurev1beta2.XOMachineStatus{
 						ProviderID: &providerID,
@@ -809,7 +796,6 @@ var _ = Describe("Reconcile", func() {
 					},
 					Spec: infrastructurev1beta2.XOMachineSpec{
 						TemplateID: uuid.Must(uuid.NewV4()).String(),
-						NamePrefix: "test",
 					},
 					Status: infrastructurev1beta2.XOMachineStatus{
 						ProviderID: &providerID,

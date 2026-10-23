@@ -133,9 +133,6 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
-                      namePrefix:
-                        description: NamePrefix is the prefix for the VM name.
-                        type: string
                       networkConfig:
                         description: NetworkConfig specifies the network configuration
                           for the VM.
@@ -277,8 +274,6 @@ spec:
                         description: TemplateName is the XO VM template name to clone
                           (alternative to TemplateID).
                         type: string
-                    required:
-                    - namePrefix
                     type: object
                 required:
                 - spec

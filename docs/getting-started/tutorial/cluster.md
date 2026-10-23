@@ -7,7 +7,9 @@ reference the templates by name.
 ## 5. The machine templates
 
 An `XOMachineTemplate` is the stencil vates-capi clones a VM from. Two of them:
-one for the control plane, one for the workers. They differ only in `namePrefix`.
+one for the control plane, one for the workers. They are identical here, but
+keeping two lets you size them differently. The VM names do not come from the
+templates: see [VM naming](../../guides/vm-naming.md).
 
 | Field | What it decides |
 |---|---|
@@ -35,7 +37,6 @@ spec:
       # Observability only: sets the "bootstrap:kubeadm" tag on the VM. It does
       # not drive how the payload is handled -- spec.bootstrap does.
       bootstrapProvider: kubeadm
-      namePrefix: my-cluster-cp
       templateID: <vm-template-uuid>
       poolID: <pool-uuid>
       resourceSet:
@@ -57,7 +58,6 @@ spec:
       bootstrap:
         format: cloudinit
       bootstrapProvider: kubeadm
-      namePrefix: my-cluster-worker
       templateID: <vm-template-uuid>
       poolID: <pool-uuid>
       resourceSet:

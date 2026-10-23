@@ -293,7 +293,6 @@ overlay:
 ```bash
 export CP_VIP=<your-cp-vip>
 export CP_SUBNET=<your-subnet-cidr-bits>
-export VM_NAME_PREFIX=<your-vm-name-prefix>
 export TALOS_VERSION=<your-talos-version>   # e.g. v1.13.9 — must match the image
 export XO_TEMPLATE_UUID=<your-xo-talos-template-uuid>
 export XO_POOL_UUID=<your-xo-pool-uuid>

@@ -46,11 +46,46 @@ type XOClusterSpec struct {
 	// +kubebuilder:validation:items:MaxLength=255
 	Tags []string `json:"tags,omitempty"`
 
+	// VMNaming sets the names of the cluster's VMs in Xen Orchestra. When
+	// unset, a VM is named <DISTRIBUTION>-<cluster>-<ROLE>-<ID>, e.g.
+	// "TALOS-my-cluster-CP-7n62g". DISTRIBUTION is the kind of the Machine's
+	// bootstrap configuration without its "Config" suffix, upper-cased
+	// (TalosConfig gives TALOS, KubeadmConfig gives KUBEADM), or CAPI when the
+	// Machine has none. ROLE is CP or WORKER.
+	//
+	// The name is computed once, when the VM is created, and never changes
+	// afterwards: editing this field (or the ClusterClass variables that feed
+	// it) updates the XOCluster in place, rolls out no machine and renames no
+	// existing VM. Only the VMs created afterwards get the new names.
+	// +optional
+	VMNaming *VMNamingSpec `json:"vmNaming,omitempty"`
+
 	// Addons selects which workload cluster addons the controller installs
 	// via ClusterResourceSet. When nil, defaults to CCM and CSI enabled and
 	// no CNI.
 	// +optional
 	Addons *AddonsSpec `json:"addons,omitempty"`
+}
+
+// VMNamingSpec sets the VM names of a cluster. The name of a VM is its role's
+// prefix followed by the ID of its Cluster API Machine: the random suffix
+// Cluster API ends generated Machine names with, e.g.
+// "<controlPlanePrefix>7n62g", or the whole Machine name when it does not end
+// with one, e.g. "<controlPlanePrefix>vmn-0".
+//
+// The prefixes are taken verbatim: no naming convention is imposed, so any
+// separator, case or component order can be expressed. Include the separator
+// before the ID in the prefix itself.
+type VMNamingSpec struct {
+	// ControlPlanePrefix is the prefix of the control plane VM names.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	ControlPlanePrefix string `json:"controlPlanePrefix"`
+
+	// WorkerPrefix is the prefix of the worker VM names.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	WorkerPrefix string `json:"workerPrefix"`
 }
 
 // AddonsSpec selects which addons the controller installs in the workload
