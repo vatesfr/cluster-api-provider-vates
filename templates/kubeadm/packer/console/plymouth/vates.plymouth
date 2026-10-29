@@ -1,0 +1,18 @@
+[Plymouth Theme]
+Name=Vates
+Description=Vates logo and a spinner on black, before the node dashboard takes tty1
+ModuleName=two-step
+
+# The spinner's frames are copied from the stock spinner theme at build time
+# (scripts/install-console.sh); only the watermark is ours.
+[two-step]
+ImageDir=/usr/share/plymouth/themes/vates
+HorizontalAlignment=.5
+VerticalAlignment=.75
+WatermarkHorizontalAlignment=.5
+WatermarkVerticalAlignment=.4
+DialogVerticalAlignment=.75
+Transition=none
+TransitionDuration=0.0
+BackgroundStartColor=0x000000
+BackgroundEndColor=0x000000

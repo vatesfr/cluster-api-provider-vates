@@ -50,6 +50,16 @@ source "qemu" "alma10_k8s-node" {
 build {
   sources = ["source.qemu.alma10_k8s-node"]
 
+  # The console first: install-k8s.sh ends with the image's final cleanup.
+  provisioner "file" {
+    source      = "console"
+    destination = "/tmp"
+  }
+
+  provisioner "shell" {
+    script = "scripts/install-console.sh"
+  }
+
   provisioner "shell" {
     environment_vars = ["K8S_VERSION=${var.k8s_version}"]
     script           = "scripts/install-k8s.sh"
