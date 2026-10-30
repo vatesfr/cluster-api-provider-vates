@@ -242,7 +242,7 @@ rules:
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "watch", "update"]
   - apiGroups: ["storage.k8s.io"]
-    resources: ["storageclasses"]
+    resources: ["storageclasses", "volumeattributesclasses"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["events"]
@@ -321,6 +321,58 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: csi-xenorchestra-external-attacher-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# csi-resizer: applies a change of the VolumeAttributesClass of an existing PVC
+# (ControllerModifyVolume: moves its VDI to the SR of the new class)
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-xenorchestra-external-resizer-role
+  labels:
+    app.kubernetes.io/instance: csi.xenorchestra.vates.tech
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+    app.kubernetes.io/name: csi-xenorchestra-external-resizer-role
+    app.kubernetes.io/component: clusterrole
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims/status"]
+    verbs: ["patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "watch", "create", "update", "patch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["volumeattributesclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "watch", "list", "delete", "update", "create"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: csi-xenorchestra-resizer-binding
+  labels:
+    app.kubernetes.io/instance: csi.xenorchestra.vates.tech
+    app.kubernetes.io/part-of: xenorchestra-csi-driver
+    app.kubernetes.io/name: csi-xenorchestra-resizer-binding
+    app.kubernetes.io/component: clusterrolebinding
+subjects:
+  - kind: ServiceAccount
+    name: csi-xenorchestra-controller-sa
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: csi-xenorchestra-external-resizer-role
   apiGroup: rbac.authorization.k8s.io
 ---
 kind: Deployment
@@ -463,6 +515,24 @@ spec:
             httpGet:
               path: /metrics
               port: 29606
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 20
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: csi-resizer
+          image: registry.k8s.io/sig-storage/csi-resizer:v2.2.1
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/csi.sock"
+            - "--http-endpoint=:29607"
+          imagePullPolicy: "IfNotPresent"
+          livenessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /metrics
+              port: 29607
             initialDelaySeconds: 10
             timeoutSeconds: 10
             periodSeconds: 20
