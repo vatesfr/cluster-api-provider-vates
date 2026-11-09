@@ -218,11 +218,18 @@ func addVIFsToParams(ctx context.Context, xoMachine *infrastructurev1beta2.XOMac
 			continue
 		}
 		device := fmt.Sprintf("%d", i)
-		createParams.VIFs = append(createParams.VIFs, payloads.VIFParams{
+		vif := payloads.VIFParams{
 			Device:  &device,
 			Network: &networkID,
-		})
-		logger.Info("Adding VIF to VM creation params", "network", networkID, "device", device)
+		}
+		// the netplan of an IPAM address matches the first VIF by this MAC (NodeMAC)
+		mac := ""
+		if i == 0 && UsesIPAM(xoMachine) {
+			mac = NodeMAC(xoMachine)
+			vif.MAC = &mac
+		}
+		createParams.VIFs = append(createParams.VIFs, vif)
+		logger.Info("Adding VIF to VM creation params", "network", networkID, "device", device, "mac", mac)
 	}
 }
 

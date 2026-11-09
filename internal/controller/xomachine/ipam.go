@@ -2,7 +2,9 @@ package xomachine
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"net"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -36,7 +38,7 @@ type Address struct {
 // the machine and a replacement starts from a fresh claim. That is what makes
 // the address of a replaced machine free again.
 func ClaimedAddress(ctx context.Context, c client.Client, xoMachine *infrastructurev1beta2.XOMachine) (*Address, error) {
-	if xoMachine.Spec.NetworkConfig == nil || len(xoMachine.Spec.NetworkConfig.AddressesFromPools) == 0 {
+	if !UsesIPAM(xoMachine) {
 		return nil, nil
 	}
 
@@ -79,9 +81,43 @@ func ClaimedAddress(ctx context.Context, c client.Client, xoMachine *infrastruct
 	}, nil
 }
 
+// UsesIPAM reports whether the machine takes its address from an IPAM pool.
+func UsesIPAM(xoMachine *infrastructurev1beta2.XOMachine) bool {
+	return xoMachine.Spec.NetworkConfig != nil && len(xoMachine.Spec.NetworkConfig.AddressesFromPools) > 0
+}
+
+// NodeMAC returns the MAC address of the machine's first VIF when its address
+// comes from an IPAM pool, so that the rendered netplan can match the interface
+// by MAC instead of by name.
+//
+// The name of the interface depends on the node image: eth0, or enX0 for a Xen
+// VIF under the kernel's predictable names (Talos since 1.5). A document naming
+// an interface the node does not have leaves the node without an address. The
+// MAC is the one thing the provider controls on both sides: it sets it on the
+// VIF and writes it in the document.
+//
+// It is derived from the XOMachine's UID, so a create that is retried, or a VM
+// that is adopted, gets the same MAC without storing it anywhere. It is a
+// locally administered unicast address (02:...): it cannot collide with a
+// vendor's, and its 40 hashed bits make a collision between two machines
+// negligible.
+func NodeMAC(xoMachine *infrastructurev1beta2.XOMachine) string {
+	seed := string(xoMachine.UID)
+	if seed == "" {
+		seed = xoMachine.Namespace + "/" + xoMachine.Name
+	}
+	sum := sha256.Sum256([]byte(seed))
+	mac := net.HardwareAddr{0x02, sum[0], sum[1], sum[2], sum[3], sum[4]}
+	return mac.String()
+}
+
 // Netplan renders the address as the network configuration the node reads: one
 // interface, a static address, and the gateway as both the default route and the
 // resolver.
+//
+// With a MAC, the interface is matched by it and iface is only the document's
+// name for it: the node applies the address to whichever interface carries the
+// MAC, whatever its name. Without one, the node looks the interface up by iface.
 //
 // The document is cloud-init's netplan v2, which is what the node's own
 // network-config reader expects, what Xen Orchestra writes from the
@@ -92,10 +128,14 @@ func ClaimedAddress(ctx context.Context, c client.Client, xoMachine *infrastruct
 // the pool knows the address, not the network's resolvers, and on the networks
 // this provider targets the gateway is the resolver. A cluster that resolves
 // elsewhere needs a field for it, not a guess here.
-func Netplan(address *Address, iface string) string {
+func Netplan(address *Address, iface, mac string) string {
 	var b strings.Builder
 	b.WriteString("version: 2\nethernets:\n")
 	fmt.Fprintf(&b, "  %s:\n", iface)
+	if mac != "" {
+		b.WriteString("    match:\n")
+		fmt.Fprintf(&b, "      macaddress: \"%s\"\n", mac)
+	}
 	b.WriteString("    dhcp4: false\n")
 	b.WriteString("    addresses:\n")
 	fmt.Fprintf(&b, "      - %s/%d\n", address.IP, address.Prefix)

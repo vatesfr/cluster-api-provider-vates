@@ -54,12 +54,13 @@ func (r *XOMachineReconciler) ipamNetworkConfig(ctx context.Context, xoMachine *
 	}
 
 	logger.Info("Claimed an address from the IPAM pool", "machine", xoMachine.Name, "address", address.IP)
-	return xomachine.Netplan(address, nodeInterface), nil, nil
+	return xomachine.Netplan(address, nodeInterface, xomachine.NodeMAC(xoMachine)), nil, nil
 }
 
-// nodeInterface is the interface the node's network configuration names. The
-// node image brings up its first ethernet under this name, and the document has
-// to name the interface the node will actually find.
+// nodeInterface is the name the node's network configuration gives the
+// interface. The interface itself is matched by the MAC of the first VIF
+// (xomachine.NodeMAC), so the name the node image gives it (eth0, enX0, ...)
+// does not matter.
 const nodeInterface = "eth0"
 
 func (r *XOMachineReconciler) reconcileNormal(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine) (ctrl.Result, error) {

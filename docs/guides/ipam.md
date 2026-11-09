@@ -24,7 +24,7 @@ flowchart LR
     xom["XOMachine<br/>networkConfig.addressesFromPools"] -->|creates| claim["IPAddressClaim"]
     claim -->|watched by| ipam["capi-ipam-in-cluster"]
     ipam -->|answers with| addr["IPAddress"]
-    addr -->|read by vates-capi| netplan["netplan<br/>on eth0"]
+    addr -->|read by vates-capi| netplan["netplan<br/>matched by MAC"]
     netplan -->|config drive| vm["VM boots<br/>on that address"]
 ```
 
@@ -219,13 +219,16 @@ over the machine's addressing. Precisely:
    never guessed in the meantime.
 3. Once the claim is answered, the controller reads the referenced `IPAddress`
    and takes its `spec.address`, `spec.prefix`, and `spec.gateway`.
-4. It renders a netplan v2 document for the `eth0` interface — static address,
-   `dhcp4: false`, and (when a gateway is set) a default route and resolver:
+4. It renders a netplan v2 document for the interface of the first VIF, matched
+   by its MAC — static address, `dhcp4: false`, and (when a gateway is set) a
+   default route and resolver:
 
     ```yaml
     version: 2
     ethernets:
       eth0:
+        match:
+          macaddress: "02:5f:1c:9a:3e:d7"
         dhcp4: false
         addresses:
           - 10.30.139.200/16
@@ -305,8 +308,13 @@ so the rendered netplan uses the pool's gateway as both the default route and th
 nameserver. If your network resolves through a different server, this is wrong
 for you — there is no field to set it today.
 
-**The interface is `eth0`.** The rendered document names `eth0`, which is the
-interface the node image brings up first. This is not configurable.
+**The interface is matched by its MAC, not its name.** The controller sets the
+MAC of the first VIF itself, derived from the XOMachine's UID (a locally
+administered address, `02:…`), and the rendered document matches that MAC. The
+node applies the address to the interface whatever the image calls it: `eth0`,
+or `enX0` for a Xen VIF under the kernel's predictable interface names (Talos
+since 1.5). `eth0` in the document is only its name for the interface. VIFs
+other than the first keep a MAC picked by Xen Orchestra.
 
 **Prefix pools are not address pools.** An IP address allocation is what the
 infrastructure provider renders into a host address; a prefix allocation is a
