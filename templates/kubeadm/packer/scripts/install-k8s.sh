@@ -62,6 +62,9 @@ sudo dnf install -y \
   "kubelet-${K8S_VERSION}" "kubeadm-${K8S_VERSION}" "kubectl-${K8S_VERSION}" \
   xe-guest-utilities-latest --disableexcludes=kubernetes
 sudo systemctl enable kubelet
+# Read by the prefilled template's preKubeadmCommands, which refuse a cluster
+# requesting another version.
+echo "${K8S_VERSION}" | sudo tee /etc/kubernetes-version
 sudo systemctl enable --now xe-linux-distribution
 
 echo "=== 4. Prefetching container images ==="
