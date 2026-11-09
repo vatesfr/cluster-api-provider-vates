@@ -1,7 +1,8 @@
 # Packer — VM template builder
 
 Build an AlmaLinux 10 VM template with containerd, kubelet, kubeadm and kubectl
-pre-installed.
+pre-installed. The image records that version in `/etc/kubernetes-version`,
+which the prefilled template checks before bootstrapping.
 
 ## Requirements
 
@@ -40,11 +41,13 @@ dashboard on tty1 — node state, Kubernetes version, Linux and Kubernetes
 distributions, pods and events. It is what the Xen Orchestra console shows.
 SSH, the serial console and tty2–tty6 (Alt+F2…F6) keep their login prompts.
 
-The dashboard is built from a vates-kube-os checkout, by default the sibling of
-this repository (needs Go):
+The dashboard is built with Go from vates-kube-os at the version pinned by
+`VATES_KUBE_OS_VERSION` in the Makefile, fetched through the module proxy and
+checked against the checksum database; `go version -m console/bin/vates-console`
+shows what an image carries.
 
-```bash
-make VATES_KUBE_OS=~/src/vates-kube-os k8s
-```
+The control plane grants every node read access to events, cluster-wide
+(ClusterRole `vates:node-dashboard`, in the prefilled templates): a node may
+not read them otherwise, and the dashboard's events panel would show a 403.
 
 Without a DRM card (`/dev/dri/card0`) the dashboard falls back to its text face.

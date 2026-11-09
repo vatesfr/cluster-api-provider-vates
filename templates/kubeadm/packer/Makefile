@@ -10,8 +10,11 @@ K8S_VHD = $(OUTPUT_DIR)/packer-alma10_k8s-node.vhd
 # KUBERNETES_VERSION used with the prefilled template.
 K8S_VERSION ?= 1.36.1
 
-# vates-kube-os checkout the node dashboard (vates-console) is built from.
-VATES_KUBE_OS ?= $(abspath ../../../../vates-kube-os)
+# The node dashboard (vates-console), pinned: fetched through the Go module
+# proxy and checked against the checksum database, and the binary records the
+# exact module version (`go version -m console/bin/vates-console`).
+VATES_KUBE_OS_MODULE = github.com/vatesfr/vates-kube-os
+VATES_KUBE_OS_VERSION ?= v0.0.0-20261029122014-cf180b5256b7
 CONSOLE_BIN = console/bin/vates-console
 CONSOLE_LOGO = console/bin/assets/vates-name-baseline-white.png
 
@@ -19,11 +22,15 @@ all: k8s
 
 # CGO off: the dashboard reaches libdrm through dlopen (purego), so the binary
 # needs no particular glibc and runs on the Alma image as built here.
-$(CONSOLE_BIN): $(shell find $(VATES_KUBE_OS)/cmd $(VATES_KUBE_OS)/internal -name '*.go' 2>/dev/null)
-	cd $(VATES_KUBE_OS) && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o $(CURDIR)/$@ ./cmd/vates-console
+# Rebuilt when this Makefile (the pin) changes; after a command-line override,
+# `make clean`.
+$(CONSOLE_BIN): Makefile
+	GOBIN=$(CURDIR)/$(@D) CGO_ENABLED=0 go install -trimpath -ldflags="-s -w" \
+		$(VATES_KUBE_OS_MODULE)/cmd/vates-console@$(VATES_KUBE_OS_VERSION)
 
-$(CONSOLE_LOGO): $(VATES_KUBE_OS)/image/assets/vates-name-baseline-white.png
-	install -D -m 0644 $< $@
+$(CONSOLE_LOGO): Makefile
+	install -D -m 0644 "$$(go mod download -json $(VATES_KUBE_OS_MODULE)@$(VATES_KUBE_OS_VERSION) \
+		| sed -n 's/.*"Dir": "\(.*\)",/\1/p')/image/assets/vates-name-baseline-white.png" $@
 
 console: $(CONSOLE_BIN) $(CONSOLE_LOGO)
 
