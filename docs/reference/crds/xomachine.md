@@ -165,8 +165,10 @@ spec:
               - 10.30.0.1
 ```
 
-The interface is always `eth0` in the rendered document, and a hard-coded
-address is fragile for a control plane node — prefer IPAM below.
+This document is passed as is: it must name, or match, the interface the node
+image actually has (`eth0`, or `enX0` for a Xen VIF under the kernel's
+predictable interface names). A hard-coded address is also fragile for a
+control plane node — prefer IPAM below, which matches the interface by MAC.
 
 ### Address from an IPAM pool
 

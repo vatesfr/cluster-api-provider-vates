@@ -2,6 +2,7 @@ package xomachine
 
 import (
 	"context"
+	"regexp"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -22,6 +23,7 @@ func TestNetplan(t *testing.T) {
 		name    string
 		address *Address
 		iface   string
+		mac     string
 		want    string
 	}{
 		{
@@ -55,6 +57,27 @@ ethernets:
 `,
 		},
 		{
+			name:    "matches the interface by its MAC when given one",
+			address: &Address{IP: "10.30.1.42", Prefix: 24, Gateway: "10.30.1.1"},
+			iface:   "eth0",
+			mac:     "02:aa:bb:cc:dd:ee",
+			want: `version: 2
+ethernets:
+  eth0:
+    match:
+      macaddress: "02:aa:bb:cc:dd:ee"
+    dhcp4: false
+    addresses:
+      - 10.30.1.42/24
+    routes:
+      - to: default
+        via: 10.30.1.1
+    nameservers:
+      addresses:
+        - 10.30.1.1
+`,
+		},
+		{
 			name:    "renders the interface it was given",
 			address: &Address{IP: "10.30.1.42", Prefix: 24},
 			iface:   "ens3",
@@ -70,10 +93,33 @@ ethernets:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := Netplan(tt.address, tt.iface); got != tt.want {
+			if got := Netplan(tt.address, tt.iface, tt.mac); got != tt.want {
 				t.Errorf("Netplan() =\n%s\nwant\n%s", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestNodeMAC(t *testing.T) {
+	machine := func(namespace, name, uid string) *infrastructurev1beta2.XOMachine {
+		return &infrastructurev1beta2.XOMachine{
+			ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name, UID: types.UID(uid)},
+		}
+	}
+	macPattern := regexp.MustCompile(`^02(:[0-9a-f]{2}){5}$`)
+
+	a := NodeMAC(machine("default", "vates-mp-1", "0b7c5a3e-2f4d-4e8a-9c1b-6d2e3f4a5b6c"))
+	if !macPattern.MatchString(a) {
+		t.Errorf("NodeMAC() = %q, want a locally administered unicast MAC (02:xx:xx:xx:xx:xx)", a)
+	}
+	if again := NodeMAC(machine("default", "vates-mp-1", "0b7c5a3e-2f4d-4e8a-9c1b-6d2e3f4a5b6c")); again != a {
+		t.Errorf("NodeMAC() = %q then %q for the same machine, want a stable MAC", a, again)
+	}
+	if other := NodeMAC(machine("default", "vates-mp-1", "9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a")); other == a {
+		t.Errorf("NodeMAC() = %q for two machines with different UIDs, want different MACs", other)
+	}
+	if byName := NodeMAC(machine("default", "vates-mp-1", "")); !macPattern.MatchString(byName) {
+		t.Errorf("NodeMAC() without a UID = %q, want a MAC derived from the name", byName)
 	}
 }
 
