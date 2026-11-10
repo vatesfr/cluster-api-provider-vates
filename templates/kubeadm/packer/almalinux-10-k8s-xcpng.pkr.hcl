@@ -104,7 +104,7 @@ source "xenserver-iso" "alma10_k8s-node" {
   firmware        = "uefi"
   vm_name         = "almalinux-10-kubeadm-v${var.k8s_version}"
   vm_description  = "AlmaLinux 10, kubeadm v${var.k8s_version}, Vates console. Built by Packer."
-  vm_tags         = ["packer", "kubeadm", "k8s-v${var.k8s_version}"]
+  vm_tags         = ["packer", "kubeadm", "k8s-prefilled-v${var.k8s_version}"]
   vcpus_max       = 2
   vcpus_atstartup = 2
   vm_memory       = 4096
