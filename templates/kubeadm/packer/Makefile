@@ -1,4 +1,4 @@
-.PHONY: all k8s vhd console clean
+.PHONY: all k8s vhd console xcpng clean
 
 HCL_FILES = almalinux-10-k8s.pkr.hcl
 
@@ -38,6 +38,12 @@ $(K8S_QCOW2): $(HCL_FILES) scripts/install-k8s.sh scripts/install-console.sh $(C
 	packer build -force -var "k8s_version=$(K8S_VERSION)" -only="qemu.alma10_k8s-node" .
 
 k8s: $(K8S_QCOW2)
+
+# The same image built on an XCP-ng pool, ending as a template there. The pool
+# and its credentials come from .env (see .env.example).
+xcpng: $(CONSOLE_BIN) $(CONSOLE_LOGO)
+	set -a && . ./.env && set +a && \
+		packer build -force -var "k8s_version=$(K8S_VERSION)" -only="xenserver-iso.alma10_k8s-node" .
 
 vhd: $(K8S_QCOW2)
 	qemu-img convert -f qcow2 -O vpc "$(K8S_QCOW2)" "$(K8S_VHD)"

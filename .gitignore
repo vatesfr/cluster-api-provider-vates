@@ -43,6 +43,8 @@ templates/*/overlays/
 !templates/kubeadm/packer/scripts/**
 templates/kubeadm/packer/console/bin/
 templates/kubeadm/packer/output-*/
+templates/kubeadm/packer/.env
+templates/kubeadm/packer/packer_cache/
 
 # Documentation build output and local tooling
 site/

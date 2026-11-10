@@ -55,3 +55,28 @@ retrying until the API server answers. For a cluster built from an older image,
 apply that manifest once by hand.
 
 Without a DRM card (`/dev/dri/card0`) the dashboard falls back to its text face.
+
+## Building on XCP-ng
+
+`almalinux-10-k8s-xcpng.pkr.hcl` builds the same image directly on an XCP-ng
+pool with [packer-plugin-xenserver](https://github.com/vatesfr/packer-plugin-xenserver),
+and leaves it there as the VM template `almalinux-10-kubeadm-v<K8S_VERSION>`
+(replaced on rebuild). AlmaLinux is installed from the DVD ISO with
+`xcpng/ks.cfg`, then provisioned by the same scripts.
+
+```bash
+cp .env.example .env   # pool, credentials, SR; git-ignored
+make xcpng
+```
+
+The template stays in the pool. To also download it, as a compressed XVA in
+`output-almalinux10-k8s-xcpng/`, set `PKR_VAR_export_xva='true'` in `.env` (or
+`make xcpng PKR_VAR_export_xva=true`).
+
+The build boots the DVD ISO `AlmaLinux-10-latest-x86_64_v2-dvd.iso` the pool
+already has (in the "NFS ISOs" SR), found by its name, which must be unique in
+the pool. With `PKR_VAR_iso_name=''` it downloads the same DVD from
+repo.almalinux.org instead (10 GB, checked against its CHECKSUM, cached in
+`packer_cache/`) and uploads it to `sr_name`. The build's own uploads go to
+`sr_name`, not to an ISO SR, whose rescans would drop them mid-build. The build
+VM needs DHCP and internet access on `network_names`.
