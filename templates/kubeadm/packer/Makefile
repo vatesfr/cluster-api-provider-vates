@@ -34,7 +34,7 @@ $(CONSOLE_LOGO): Makefile
 
 console: $(CONSOLE_BIN) $(CONSOLE_LOGO)
 
-$(K8S_QCOW2): $(HCL_FILES) scripts/install-k8s.sh scripts/install-console.sh $(CONSOLE_BIN) $(CONSOLE_LOGO) $(wildcard console/*.service console/plymouth/*)
+$(K8S_QCOW2): $(HCL_FILES) scripts/install-k8s.sh scripts/install-console.sh $(CONSOLE_BIN) $(CONSOLE_LOGO) $(wildcard console/*.service console/*.path console/*.yaml console/plymouth/*)
 	packer build -force -var "k8s_version=$(K8S_VERSION)" -only="qemu.alma10_k8s-node" .
 
 k8s: $(K8S_QCOW2)

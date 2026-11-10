@@ -25,37 +25,6 @@ spec:
                 value: systemd
               - name: cloud-provider
                 value: external
-        # The console dashboard baked into the prefilled image shows each node's
-        # events, which a node may not read. This grants every node read access to
-        # events cluster-wide (RBAC cannot narrow it to one node's): a deliberate,
-        # read-only widening. Applied from every control-plane node, idempotently.
-        files:
-          - path: /etc/kubernetes/vates-node-dashboard-rbac.yaml
-            permissions: "0644"
-            content: |
-              apiVersion: rbac.authorization.k8s.io/v1
-              kind: ClusterRole
-              metadata:
-                name: vates:node-dashboard
-              rules:
-                - apiGroups: [""]
-                  resources: ["events"]
-                  verbs: ["get", "list", "watch"]
-              ---
-              apiVersion: rbac.authorization.k8s.io/v1
-              kind: ClusterRoleBinding
-              metadata:
-                name: vates:node-dashboard
-              roleRef:
-                apiGroup: rbac.authorization.k8s.io
-                kind: ClusterRole
-                name: vates:node-dashboard
-              subjects:
-                - apiGroup: rbac.authorization.k8s.io
-                  kind: Group
-                  name: system:nodes
-        postKubeadmCommands:
-          - kubectl --kubeconfig /etc/kubernetes/admin.conf apply -f /etc/kubernetes/vates-node-dashboard-rbac.yaml || true
         preKubeadmCommands:
           - |
             IP=$(hostname -I | awk '{print $1}')

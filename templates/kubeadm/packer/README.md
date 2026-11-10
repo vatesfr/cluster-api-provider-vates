@@ -46,8 +46,12 @@ The dashboard is built with Go from vates-kube-os at the version pinned by
 checked against the checksum database; `go version -m console/bin/vates-console`
 shows what an image carries.
 
-The control plane grants every node read access to events, cluster-wide
-(ClusterRole `vates:node-dashboard`, in the prefilled templates): a node may
-not read them otherwise, and the dashboard's events panel would show a 403.
+The image also grants every node read access to events, cluster-wide
+(ClusterRole `vates:node-dashboard`, bound to the `system:nodes` group): a node
+may not read them otherwise, and the dashboard's events panel would show a 403.
+On control-plane nodes, `vates-node-dashboard-rbac.path` waits for kubeadm's
+`/etc/kubernetes/admin.conf` and applies `console/node-dashboard-rbac.yaml`,
+retrying until the API server answers. For a cluster built from an older image,
+apply that manifest once by hand.
 
 Without a DRM card (`/dev/dri/card0`) the dashboard falls back to its text face.

@@ -57,6 +57,11 @@ echo "=== 3. Putting the dashboard on tty1 ==="
 sudo install -m 0644 "${SRC}/vates-console.service" /etc/systemd/system/vates-console.service
 sudo systemctl mask getty@tty1.service
 sudo systemctl enable vates-console.service
+# Control planes grant the dashboards the right to read events (see the
+# manifest): applied once kubeadm has made this node one.
+sudo install -m 0644 "${SRC}/node-dashboard-rbac.yaml" /usr/share/vates/node-dashboard-rbac.yaml
+sudo install -m 0644 "${SRC}/vates-node-dashboard-rbac.path" "${SRC}/vates-node-dashboard-rbac.service" /etc/systemd/system/
+sudo systemctl enable vates-node-dashboard-rbac.path
 
 echo "=== 4. Installing the Plymouth theme ==="
 sudo install -d /usr/share/plymouth/themes/vates
