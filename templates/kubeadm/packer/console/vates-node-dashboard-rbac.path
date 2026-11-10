@@ -1,0 +1,9 @@
+[Unit]
+Description=Grant the node dashboards their events once this is a control plane
+
+# admin.conf exists only on control-plane nodes, written by kubeadm init/join.
+[Path]
+PathExists=/etc/kubernetes/admin.conf
+
+[Install]
+WantedBy=multi-user.target

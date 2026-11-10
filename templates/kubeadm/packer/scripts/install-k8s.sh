@@ -13,7 +13,9 @@ K8S_VERSION="${K8S_VERSION:-1.36.1}"   # full version, e.g. 1.36.1
 K8S_MINOR="v${K8S_VERSION%.*}"         # RPM channel, e.g. v1.36
 
 echo "=== 0. Installing missing kernel modules ==="
-sudo dnf install -y kernel-modules kernel-modules-extra
+# Pinned to the running kernel: the cloud image lags the repository, and the
+# latest modules-extra would bring a newer kernel without br_netfilter for this one.
+sudo dnf install -y "kernel-modules-$(uname -r)" "kernel-modules-extra-$(uname -r)"
 
 echo "=== 1. Configuring kernel prerequisites for K8s ==="
 cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
@@ -60,6 +62,9 @@ sudo dnf install -y \
   "kubelet-${K8S_VERSION}" "kubeadm-${K8S_VERSION}" "kubectl-${K8S_VERSION}" \
   xe-guest-utilities-latest --disableexcludes=kubernetes
 sudo systemctl enable kubelet
+# Read by the prefilled template's preKubeadmCommands, which refuse a cluster
+# requesting another version.
+echo "${K8S_VERSION}" | sudo tee /etc/kubernetes-version
 sudo systemctl enable --now xe-linux-distribution
 
 echo "=== 4. Prefetching container images ==="
