@@ -79,14 +79,9 @@ spec:
       # break the cloud-provider=external bootstrap deadlock (node addresses /
       # providerID are only set by the CCM).
       hostNetwork: true
-      dnsPolicy: None
-      dnsConfig:
-        nameservers:
-          - 10.30.0.1
-        searches:
-          - default.svc.cluster.local
-          - svc.cluster.local
-          - cluster.local
+      # Use the node's resolver: CoreDNS is not running yet at bootstrap, and
+      # the CCM only needs to resolve the Xen Orchestra URL.
+      dnsPolicy: Default
       priorityClassName: system-cluster-critical
       containers:
         - name: xenorchestra-cloud-controller-manager
