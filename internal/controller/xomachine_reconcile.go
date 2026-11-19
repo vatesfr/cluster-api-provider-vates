@@ -351,16 +351,18 @@ func (r *XOMachineReconciler) tryFastPath(ctx context.Context, xoMachine *infras
 	}
 
 	if xoMachine.Status.Ready {
-		if !isConditionTrue(xoMachine, "VmReady") {
+		// Best-effort, on every reconcile: keep the VM tags current (also tags
+		// VMs created before tagging existed), start the VM again if it was
+		// shut down outside the controller, and re-read the machine's address,
+		// which Xen Orchestra can have changed since provisioning.
+		if r.refreshReadyMachine(ctx, xoMachine) && !isConditionTrue(xoMachine, "VmReady") {
 			if ue := xomachine.UpdateCondition(ctx, r.Client, xoMachine, metav1.ConditionTrue, "VmReady", "VM is created, running and has an IP address"); ue != nil {
 				return &ctrl.Result{}, ue
 			}
 		}
-		// Best-effort, on every reconcile: keep the VM tags current (also tags
-		// VMs created before tagging existed) and re-read the machine's
-		// address, which Xen Orchestra can have changed since provisioning.
-		r.refreshReadyMachine(ctx, xoMachine)
-		return &ctrl.Result{}, nil
+		// Nothing in Kubernetes changes when a VM is shut down in Xen
+		// Orchestra: the controller has to come back and look.
+		return &ctrl.Result{RequeueAfter: readyMachineResyncPeriod}, nil
 	}
 
 	vmID, parseErr := xok8scommon.GetVMID(*xoMachine.Status.ProviderID)
@@ -391,8 +393,16 @@ func (r *XOMachineReconciler) tryFastPath(ctx context.Context, xoMachine *infras
 	return &result, err
 }
 
-// refreshReadyMachine applies the two best-effort updates a Ready machine still
-// needs on every reconcile: its VM tags, and its address.
+// readyMachineResyncPeriod is how often a Ready machine's VM is looked at
+// again, to notice a VM shut down outside the controller.
+const readyMachineResyncPeriod = time.Minute
+
+// refreshReadyMachine applies the best-effort updates a Ready machine still
+// needs on every reconcile: its VM tags, its power state, and its address.
+//
+// A VM is created with auto power on disabled, so a VM shut down from Xen
+// Orchestra, or by a hard shutdown, stays halted: nothing but the controller
+// starts it again. The machine is still the desired state, so it is started.
 //
 // The address is not stable. Xen Orchestra reports the guest's own address, and
 // a DHCP lease can move across a reboot; the Ready fast path is the only place a
@@ -401,37 +411,64 @@ func (r *XOMachineReconciler) tryFastPath(ctx context.Context, xoMachine *infras
 // Node's InternalIP and the cluster endpoint falls back to it, so a stale
 // address is a wrong address for everything downstream.
 //
-// Both updates are best-effort by design: a Ready machine must not be requeued
-// or marked unready because Xen Orchestra was briefly unreachable. The next
-// reconcile retries.
-func (r *XOMachineReconciler) refreshReadyMachine(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine) {
+// All updates are best-effort by design: a Ready machine must not be marked
+// unready because Xen Orchestra was briefly unreachable. The next reconcile
+// retries. It reports false only when the VM was found halted, so the caller
+// does not mark the machine's VM ready while it boots again.
+func (r *XOMachineReconciler) refreshReadyMachine(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine) bool {
 	logger := log.FromContext(ctx)
 
 	xoCreds, err := r.resolveMachineCredentials(ctx, xoMachine)
 	if err != nil {
-		return
+		return true
 	}
 	xoClient, err := r.newXOClient(ctx, xoCreds)
 	if err != nil || xoClient == nil {
-		return
+		return true
 	}
 	vmID, err := xok8scommon.GetVMID(*xoMachine.Status.ProviderID)
 	if err != nil {
-		return
+		return true
 	}
 
 	xomachine.SetVMTags(ctx, r.Client, xoMachine, vmID, xoClient, xoMachine.Spec.BootstrapProvider)
 
 	vm, err := xoClient.Client.VM().GetByID(ctx, vmID)
 	if err != nil {
-		logger.Error(err, "Failed to re-read the VM to refresh its address", "id", vmID.String())
-		return
+		logger.Error(err, "Failed to re-read the VM to refresh its state", "id", vmID.String())
+		return true
 	}
+
+	if vm.PowerState == payloads.PowerStateHalted {
+		r.restartHaltedVM(ctx, xoMachine, xoClient, vm)
+		return false
+	}
+
 	if !xomachine.SetNodeAddress(xoMachine, xomachine.ResolveVMIPNow(xoClient, vm)) {
-		return
+		return true
 	}
 	if err := r.Status().Update(ctx, xoMachine); err != nil {
 		logger.Error(err, "Failed to record the machine's refreshed address")
+	}
+	return true
+}
+
+// restartHaltedVM starts again the halted VM of a Ready machine, and records
+// on the machine that its VM was found halted. A failed start is recorded by
+// StartVM on the Ready condition; the next reconcile retries.
+func (r *XOMachineReconciler) restartHaltedVM(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine, xoClient *xok8scommon.XoClient, vm *payloads.VM) {
+	logger := log.FromContext(ctx)
+
+	logger.Info("VM of a Ready machine is halted, starting it", "id", vm.ID.String(), "name", vm.NameLabel)
+	r.warn(xoMachine, "VmHalted", "StartVM", "VM %s was found halted, starting it", vm.NameLabel)
+
+	if _, _, err := xomachine.StartVM(ctx, r.Client, xoClient, xoMachine, vm); err != nil {
+		logger.Error(err, "Failed to start halted VM", "id", vm.ID.String())
+		return
+	}
+	if ue := xomachine.UpdateCondition(ctx, r.Client, xoMachine, metav1.ConditionFalse, "VmRestarted",
+		"VM was found halted and has been started again"); ue != nil {
+		logger.Error(ue, "Failed to record the restart of the VM")
 	}
 }
 

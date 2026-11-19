@@ -235,12 +235,76 @@ var _ = Describe("Reconcile", func() {
 				NamespacedName: types.NamespacedName{Name: "test", Namespace: "default"},
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(BeZero())
+			Expect(result.RequeueAfter).To(Equal(readyMachineResyncPeriod))
 
 			updated := &infrastructurev1beta2.XOMachine{}
 			Expect(r.Get(ctx, types.NamespacedName{Name: "test", Namespace: "default"}, updated)).To(Succeed())
 			Expect(updated.Status.Addresses).To(HaveLen(1))
 			Expect(updated.Status.Addresses[0].Address).To(Equal("10.30.1.240"))
+		})
+
+		It("starts again the halted VM of an already-Ready machine", func() {
+			vmUUID := uuid.Must(uuid.NewV4())
+			poolUUID := uuid.Must(uuid.NewV4())
+			providerID := "xenorchestra://" + poolUUID.String() + "/" + vmUUID.String()
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&infrastructurev1beta2.XOMachine{}).WithObjects(
+				&infrastructurev1beta2.XOMachine{
+					ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+					Spec: infrastructurev1beta2.XOMachineSpec{
+						ProviderID: &providerID,
+					},
+					Status: infrastructurev1beta2.XOMachineStatus{
+						Ready:      true,
+						ProviderID: &providerID,
+						Addresses: []corev1.NodeAddress{
+							{Type: corev1.NodeInternalIP, Address: "10.30.1.42"},
+						},
+					},
+				},
+			).Build()
+
+			r = &XOMachineReconciler{
+				Client:  fakeClient,
+				Scheme:  scheme,
+				XoCreds: &xok8scommon.XoConfig{},
+				newClientFunc: func(_ context.Context, _ *xok8scommon.XoConfig) (*xok8scommon.XoClient, error) {
+					return &xok8scommon.XoClient{Client: mockLib}, nil
+				},
+			}
+
+			// The VM was hard shut down from Xen Orchestra: auto power on is
+			// disabled, so only the controller can bring it back.
+			gomock.InOrder(
+				mockVM.EXPECT().
+					GetByID(gomock.Any(), vmUUID).
+					Return(&payloads.VM{ID: vmUUID, PowerState: payloads.PowerStateHalted}, nil),
+				mockVM.EXPECT().
+					Start(gomock.Any(), vmUUID, nil).
+					Return("task-start", nil),
+				mockVM.EXPECT().
+					GetByID(gomock.Any(), vmUUID).
+					Return(&payloads.VM{ID: vmUUID, PowerState: payloads.PowerStateRunning}, nil),
+			)
+			mockTask.EXPECT().
+				Wait(gomock.Any(), "task-start").
+				Return(&payloads.Task{Status: payloads.Success}, nil)
+
+			result, err := r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(Equal(readyMachineResyncPeriod))
+
+			updated := &infrastructurev1beta2.XOMachine{}
+			Expect(r.Get(ctx, types.NamespacedName{Name: "test", Namespace: "default"}, updated)).To(Succeed())
+			Expect(updated.Status.Ready).To(BeTrue())
+			Expect(updated.Status.Addresses[0].Address).To(Equal("10.30.1.42"))
+			Expect(updated.Status.Conditions).To(ContainElement(And(
+				HaveField("Type", "Ready"),
+				HaveField("Status", metav1.ConditionFalse),
+				HaveField("Reason", "VmRestarted"),
+			)))
 		})
 
 		It("sets the disk size when DiskSize is set", func() {
