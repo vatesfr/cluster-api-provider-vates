@@ -9,6 +9,7 @@ package bootstrap
 
 import (
 	"context"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -65,6 +66,10 @@ func Build(ctx context.Context, deps Dependencies, behavior Behavior) (Result, e
 	cloudConfig := string(deps.BootstrapData)
 
 	if behavior.Format == infrastructurev1beta2.BootstrapFormatCloudInit {
+		// The injections below re-serialize the YAML, which drops comments: set
+		// the template header aside so cloud-init still renders "{{ ... }}".
+		header, body := splitTemplateHeader(cloudConfig)
+		cloudConfig = body
 		injectSSHKeys := resolveInjectSSHKeys(ctx, deps.Client, deps.Machine, deps.XOMachine)
 		var err error
 		cloudConfig, err = BuildCloudInitWithSSHKeys(ctx, deps.XOClient, []byte(cloudConfig), injectSSHKeys)
@@ -78,9 +83,24 @@ func Build(ctx context.Context, deps Dependencies, behavior Behavior) (Result, e
 		if err != nil {
 			return Result{}, err
 		}
+		cloudConfig = header + cloudConfig
 	}
 
 	return Result{CloudConfig: cloudConfig, NetworkConfig: networkConfig(deps, behavior)}, nil
+}
+
+// splitTemplateHeader splits off the first line of a user-data when it is a
+// cloud-init template header ("## template: jinja", which CABPK and Rancher
+// always write). cloud-init only honors it as the very first line.
+func splitTemplateHeader(userData string) (header, body string) {
+	if !strings.HasPrefix(userData, "## template:") {
+		return "", userData
+	}
+	line, rest, found := strings.Cut(userData, "\n")
+	if !found {
+		return "", userData
+	}
+	return line + "\n", rest
 }
 
 // networkConfig returns the config-drive network payload.

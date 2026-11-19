@@ -8,6 +8,7 @@ import (
 	"go.uber.org/mock/gomock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	xoclient "github.com/vatesfr/xenorchestra-go-sdk/client"
@@ -125,6 +126,42 @@ var _ = Describe("Build", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.CloudConfig).To(ContainSubstring("kube-vip-pre.sh"))
 		Expect(result.CloudConfig).To(ContainSubstring(kubeVIPTestVIP))
+		Expect(result.CloudConfig).To(HavePrefix("#cloud-config\n"), "a payload without a template header gains none")
+	})
+
+	It("keeps the jinja template header through the kube-vip injection", func() {
+		deps := kubeVIPTestDeps()
+		deps.BootstrapData = append([]byte(jinjaHeader), deps.BootstrapData...)
+
+		result, err := Build(context.Background(), deps, Behavior{Format: infrastructurev1beta2.BootstrapFormatCloudInit})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.CloudConfig).To(HavePrefix(jinjaHeader + "#cloud-config\n"))
+		Expect(result.CloudConfig).To(ContainSubstring("kube-vip-pre.sh"))
+	})
+
+	It("keeps the jinja template header through the SSH key and kube-vip injections", func() {
+		ctrl := gomock.NewController(GinkgoT())
+		defer ctrl.Finish()
+		mockV1 := NewMockXOClient(ctrl)
+		mockLib := k8smocks.NewMockLibrary(ctrl)
+		mockLib.EXPECT().V1Client().Return(mockV1).AnyTimes()
+		mockV1.EXPECT().GetCurrentUser().Return(&xoclient.User{
+			Preferences: xoclient.Preferences{SshKeys: []xoclient.SshKey{{Key: "ssh-rsa AAA test"}}},
+		}, nil)
+
+		deps := kubeVIPTestDeps()
+		deps.XOClient = &xok8scommon.XoClient{Client: mockLib}
+		deps.BootstrapData = append([]byte(jinjaHeader), deps.BootstrapData...)
+		xoCluster := &infrastructurev1beta2.XOCluster{}
+		Expect(deps.Client.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "demo-xo"}, xoCluster)).To(Succeed())
+		xoCluster.Spec.InjectSSHKeys = true
+		Expect(deps.Client.Update(context.Background(), xoCluster)).To(Succeed())
+
+		result, err := Build(context.Background(), deps, Behavior{Format: infrastructurev1beta2.BootstrapFormatCloudInit})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.CloudConfig).To(HavePrefix(jinjaHeader + "#cloud-config\n"))
+		Expect(result.CloudConfig).To(ContainSubstring("ssh-rsa AAA test"))
+		Expect(result.CloudConfig).To(ContainSubstring("kube-vip-pre.sh"))
 	})
 
 	It("leaves a passthrough payload untouched even when the cluster uses kube-vip", func() {
@@ -135,6 +172,9 @@ var _ = Describe("Build", func() {
 })
 
 const kubeVIPTestVIP = "192.168.1.240"
+
+// jinjaHeader is the first line CABPK writes in every cloud-init user-data.
+const jinjaHeader = "## template: jinja\n"
 
 // kubeVIPTestDeps returns Dependencies for a control plane Machine whose cluster
 // requests kube-vip. The payload is a minimal kubeadm cloud-config.
