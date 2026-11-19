@@ -175,6 +175,11 @@ shipped templates set it for kubeadm; the Talos flow needs none. Adding a new
 bootstrap provider does not require any change to this controller — only the
 declaration in its `XOMachineTemplate`.
 
+## Pausing reconciliation
+
+To pause a cluster or a single machine (for maintenance, a manual intervention
+in Xen Orchestra, or a move), see [Pausing reconciliation](docs/operations/pausing.md).
+
 ## Development
 
 Contributors building from source (build/push loop for kind and k3s,
