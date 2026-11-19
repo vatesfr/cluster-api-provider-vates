@@ -1,7 +1,8 @@
 # Packer — VM template builder
 
 Build an AlmaLinux 10 VM template with containerd, kubelet, kubeadm and kubectl
-pre-installed.
+pre-installed. The image records that version in `/etc/kubernetes-version`,
+which the prefilled template checks before bootstrapping.
 
 ## Requirements
 
@@ -31,3 +32,51 @@ The build runs `scripts/install-k8s.sh`, which configures the kernel modules and
 sysctls, installs containerd, `kubelet`/`kubeadm`/`kubectl` (pinned to
 `K8S_VERSION`) and the Xen guest tools, then prefetches the control plane
 images. The script pulls everything from the upstream registries.
+
+## Console
+
+The image also gets a face, installed by `scripts/install-console.sh`: a Vates
+Plymouth splash at boot, then the [vates-console](https://github.com/vatesfr/vates-kube-os)
+dashboard on tty1 — node state, Kubernetes version, Linux and Kubernetes
+distributions, pods and events. It is what the Xen Orchestra console shows.
+SSH, the serial console and tty2–tty6 (Alt+F2…F6) keep their login prompts.
+
+The dashboard is built with Go from vates-kube-os at the version pinned by
+`VATES_KUBE_OS_VERSION` in the Makefile, fetched through the module proxy and
+checked against the checksum database; `go version -m console/bin/vates-console`
+shows what an image carries.
+
+The image also grants every node read access to events, cluster-wide
+(ClusterRole `vates:node-dashboard`, bound to the `system:nodes` group): a node
+may not read them otherwise, and the dashboard's events panel would show a 403.
+On control-plane nodes, `vates-node-dashboard-rbac.path` waits for kubeadm's
+`/etc/kubernetes/admin.conf` and applies `console/node-dashboard-rbac.yaml`,
+retrying until the API server answers. For a cluster built from an older image,
+apply that manifest once by hand.
+
+Without a DRM card (`/dev/dri/card0`) the dashboard falls back to its text face.
+
+## Building on XCP-ng
+
+`almalinux-10-k8s-xcpng.pkr.hcl` builds the same image directly on an XCP-ng
+pool with [packer-plugin-xenserver](https://github.com/vatesfr/packer-plugin-xenserver),
+and leaves it there as the VM template `almalinux-10-kubeadm-v<K8S_VERSION>`
+(replaced on rebuild). AlmaLinux is installed from the DVD ISO with
+`xcpng/ks.cfg`, then provisioned by the same scripts.
+
+```bash
+cp .env.example .env   # pool, credentials, SR; git-ignored
+make xcpng
+```
+
+The template stays in the pool. To also download it, as a compressed XVA in
+`output-almalinux10-k8s-xcpng/`, set `PKR_VAR_export_xva='true'` in `.env` (or
+`make xcpng PKR_VAR_export_xva=true`).
+
+The build boots the DVD ISO `AlmaLinux-10-latest-x86_64_v2-dvd.iso` the pool
+already has (in the "NFS ISOs" SR), found by its name, which must be unique in
+the pool. With `PKR_VAR_iso_name=''` it downloads the same DVD from
+repo.almalinux.org instead (10 GB, checked against its CHECKSUM, cached in
+`packer_cache/`) and uploads it to `sr_name`. The build's own uploads go to
+`sr_name`, not to an ISO SR, whose rescans would drop them mid-build. The build
+VM needs DHCP and internet access on `network_names`.

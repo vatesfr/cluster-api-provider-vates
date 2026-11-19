@@ -1,0 +1,14 @@
+[Unit]
+Description=Grant the node dashboards their events (ClusterRole vates:node-dashboard)
+# Retried until the API server answers and admin.conf is authorised, without
+# a start limit to run into while kubeadm is still bringing it up.
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/kubectl --kubeconfig /etc/kubernetes/admin.conf apply -f /usr/share/vates/node-dashboard-rbac.yaml
+Restart=on-failure
+RestartSec=10
+# Stays active once done, or the path unit, its file still there, would start
+# it again in a loop.
+RemainAfterExit=yes

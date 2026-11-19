@@ -1,0 +1,24 @@
+[Unit]
+Description=Vates node dashboard on tty1
+Documentation=https://github.com/vatesfr/vates-kube-os
+# Same ordering as getty@tty1, whose place this takes: after Plymouth has let go
+# of the screen. getty@tty1 is masked; tty2..6 keep their login prompts.
+After=systemd-user-sessions.service plymouth-quit-wait.service
+Conflicts=getty@tty1.service
+
+[Service]
+ExecStart=/usr/local/bin/vates-console
+Environment=DASHBOARD_MODE=gui
+Environment=DASHBOARD_K8S_DISTRIBUTION=kubeadm
+# DejaVu under the names the console looks for (the Alma packages use others).
+Environment=VATES_FONT_DIR=/usr/share/vates/fonts
+StandardInput=tty
+StandardOutput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
