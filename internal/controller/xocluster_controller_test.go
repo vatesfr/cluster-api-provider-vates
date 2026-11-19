@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -341,6 +342,64 @@ var _ = Describe("addons", func() {
 			yaml := ccmYAML()
 			Expect(yaml).To(ContainSubstring("--node-out-of-service-sync-period=5s"))
 			Expect(yaml).To(ContainSubstring("--node-out-of-service-grace-period=2m0s"))
+		})
+	})
+
+	Describe("CSI manifest", func() {
+		// The objects of the rendered CSI manifest, by kind and name
+		csiObjects := func() map[string]map[string]any {
+			Expect(r.reconcileAddons(ctx, &infrastructurev1beta2.XOCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: "default"},
+			}, cluster, &xok8scommon.XoConfig{URL: "https://xo.test", Token: "tok"})).To(Succeed())
+			cm := &corev1.ConfigMap{}
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "csi-manifests-my-cluster"}, cm)).To(Succeed())
+
+			objects := map[string]map[string]any{}
+			for doc := range strings.SplitSeq(cm.Data["csi.yaml"], "\n---\n") {
+				obj := map[string]any{}
+				Expect(yamlv3.Unmarshal([]byte(doc), &obj)).To(Succeed())
+				if len(obj) > 0 {
+					meta := obj["metadata"].(map[string]any)
+					objects[obj["kind"].(string)+"/"+meta["name"].(string)] = obj
+				}
+			}
+			return objects
+		}
+
+		// Whether a ClusterRole lets its subjects read the VolumeAttributesClasses
+		readsVACs := func(role map[string]any) bool {
+			for _, rule := range role["rules"].([]any) {
+				rule := rule.(map[string]any)
+				if fmt.Sprint(rule["apiGroups"]) == "[storage.k8s.io]" &&
+					strings.Contains(fmt.Sprint(rule["resources"]), "volumeattributesclasses") &&
+					fmt.Sprint(rule["verbs"]) == "[get list watch]" {
+					return true
+				}
+			}
+			return false
+		}
+
+		BeforeEach(func() {
+			r.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
+		})
+
+		It("lets the provisioner read the VolumeAttributesClass of a new PVC", func() {
+			Expect(readsVACs(csiObjects()["ClusterRole/csi-xenorchestra-external-provisioner-role"])).To(BeTrue())
+		})
+
+		It("runs a csi-resizer allowed to apply a change of VolumeAttributesClass", func() {
+			objects := csiObjects()
+			Expect(readsVACs(objects["ClusterRole/csi-xenorchestra-external-resizer-role"])).To(BeTrue())
+			Expect(objects).To(HaveKey("ClusterRoleBinding/csi-xenorchestra-resizer-binding"))
+
+			spec := objects["Deployment/csi-xenorchestra-controller"]["spec"].(map[string]any)
+			pod := spec["template"].(map[string]any)["spec"].(map[string]any)
+			containers := pod["containers"].([]any)
+			names := make([]string, 0, len(containers))
+			for _, c := range containers {
+				names = append(names, c.(map[string]any)["name"].(string))
+			}
+			Expect(names).To(ContainElement("csi-resizer"))
 		})
 	})
 })
