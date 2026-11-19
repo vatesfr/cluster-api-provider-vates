@@ -3,11 +3,17 @@ package controller
 import (
 	"context"
 
+	"github.com/vatesfr/cluster-api-provider-vates/internal/controller/xomachine"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/cluster-api/util/annotations"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	corev1 "k8s.io/api/core/v1"
@@ -59,6 +65,17 @@ func (r *XOMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	message, err := r.machinePauseMessage(ctx, xoMachine)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := patchPausedCondition(ctx, r.Client, xoMachine, &xoMachine.Status.Conditions, message); err != nil {
+		return ctrl.Result{}, err
+	}
+	if message != "" {
+		return ctrl.Result{}, nil
+	}
+
 	if !xoMachine.DeletionTimestamp.IsZero() {
 		return r.reconcileDelete(ctx, xoMachine)
 	}
@@ -71,6 +88,16 @@ func (r *XOMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&infrastructurev1beta2.XOMachine{}).
 		Watches(
+			&clusterv1.Cluster{},
+			handler.EnqueueRequestsFromMapFunc(r.clusterToXOMachines),
+			// Cluster status updates are frequent; only pause transitions need fan-out.
+			builder.WithPredicates(predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+				oldCluster, oldOK := e.ObjectOld.(*clusterv1.Cluster)
+				newCluster, newOK := e.ObjectNew.(*clusterv1.Cluster)
+				return oldOK && newOK && ptr.Deref(oldCluster.Spec.Paused, false) != ptr.Deref(newCluster.Spec.Paused, false)
+			}}),
+		).
+		Watches(
 			&clusterv1.Machine{},
 			handler.EnqueueRequestsFromMapFunc(r.machineToXOMachine),
 		).
@@ -81,6 +108,63 @@ func (r *XOMachineReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{MaxConcurrentReconciles: 5}).
 		Named("xomachine").
 		Complete(r)
+}
+
+func (r *XOMachineReconciler) machinePauseMessage(ctx context.Context, xoMachine *infrastructurev1beta2.XOMachine) (string, error) {
+	if message := pauseMessage(xoMachine, nil); message != "" {
+		return message, nil
+	}
+	machine, err := xomachine.GetOwnerMachine(ctx, r.Client, xoMachine)
+	if err != nil {
+		return "", err
+	}
+	clusterName := xoMachine.Labels[clusterv1.ClusterNameLabel]
+	if machine != nil {
+		if annotations.HasPaused(machine) {
+			return "Owner Machine has the cluster.x-k8s.io/paused annotation", nil
+		}
+		clusterName = machine.Spec.ClusterName
+	}
+	cluster, err := clusterForPause(ctx, r.Client, xoMachine.Namespace, clusterName)
+	if err != nil {
+		return "", err
+	}
+	return pauseMessage(xoMachine, cluster), nil
+}
+
+// clusterToXOMachines wakes machines on cluster pause transitions, including
+// machines without an owner yet which carry the standard cluster-name label.
+func (r *XOMachineReconciler) clusterToXOMachines(ctx context.Context, obj client.Object) []reconcile.Request {
+	cluster, ok := obj.(*clusterv1.Cluster)
+	if !ok {
+		return nil
+	}
+	machines := &clusterv1.MachineList{}
+	if err := r.List(ctx, machines, client.InNamespace(cluster.Namespace)); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "Failed to list Machines for Cluster pause transition")
+		return nil
+	}
+	infraMachines := &infrastructurev1beta2.XOMachineList{}
+	if err := r.List(ctx, infraMachines, client.InNamespace(cluster.Namespace),
+		client.MatchingLabels{clusterv1.ClusterNameLabel: cluster.Name}); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "Failed to list XOMachines for Cluster pause transition")
+		return nil
+	}
+	keys := map[types.NamespacedName]struct{}{}
+	for _, machine := range machines.Items {
+		if machine.Spec.ClusterName == cluster.Name && machine.Spec.InfrastructureRef.Kind == infrastructurev1beta2.KindXOMachine &&
+			machine.Spec.InfrastructureRef.Name != "" {
+			keys[types.NamespacedName{Namespace: machine.Namespace, Name: machine.Spec.InfrastructureRef.Name}] = struct{}{}
+		}
+	}
+	for _, machine := range infraMachines.Items {
+		keys[types.NamespacedName{Namespace: machine.Namespace, Name: machine.Name}] = struct{}{}
+	}
+	requests := make([]reconcile.Request, 0, len(keys))
+	for key := range keys {
+		requests = append(requests, reconcile.Request{NamespacedName: key})
+	}
+	return requests
 }
 
 func (r *XOMachineReconciler) machineToXOMachine(ctx context.Context, o client.Object) []reconcile.Request {

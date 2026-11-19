@@ -95,6 +95,7 @@ nav:
       - Cluster templates: reference/templates.md
   - Operations:
       - operations/upgrading.md
+      - operations/pausing.md
       - operations/troubleshooting.md
       - operations/releasing.md
   - Contributing:

@@ -63,6 +63,27 @@ func (r *XOClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	message := pauseMessage(xoCluster, nil)
+	if message == "" {
+		cluster, err := r.getOwnerCluster(ctx, xoCluster)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if cluster == nil {
+			cluster, err = clusterForPause(ctx, r.Client, xoCluster.Namespace, xoCluster.Labels[clusterv1.ClusterNameLabel])
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		message = pauseMessage(xoCluster, cluster)
+	}
+	if err := patchPausedCondition(ctx, r.Client, xoCluster, &xoCluster.Status.Conditions, message); err != nil {
+		return ctrl.Result{}, err
+	}
+	if message != "" {
+		return ctrl.Result{}, nil
+	}
+
 	if !xoCluster.DeletionTimestamp.IsZero() {
 		return r.reconcileDelete(ctx, xoCluster)
 	}
