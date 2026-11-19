@@ -76,6 +76,7 @@ nav:
               - guides/providers/talos/prerequisites.md
               - guides/providers/talos/installation.md
               - guides/providers/talos/cluster.md
+          - Rancher: guides/providers/rancher.md
       - guides/clusterclass.md
       - guides/vm-naming.md
       - guides/networking.md
