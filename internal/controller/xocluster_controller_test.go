@@ -162,6 +162,7 @@ var _ = Describe("addons", func() {
 		Expect(clusterv1.AddToScheme(scheme)).To(Succeed())
 		Expect(addonsv1.AddToScheme(scheme)).To(Succeed())
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(infrastructurev1beta2.AddToScheme(scheme)).To(Succeed())
 		ctx = context.Background()
 		r = &XOClusterReconciler{}
 		cluster = &clusterv1.Cluster{
@@ -193,21 +194,54 @@ var _ = Describe("addons", func() {
 		// A non-default namespace, so a regression to a hardcoded "default"
 		// namespace fails here.
 		const ns = "vates-prod"
+		owner := &infrastructurev1beta2.XOCluster{ObjectMeta: metav1.ObjectMeta{Name: "my-cluster", Namespace: ns, UID: "xocluster-uid"}}
 
 		It("creates the ConfigMap and ClusterResourceSet in the cluster namespace", func() {
 			r.Client = fake.NewClientBuilder().WithScheme(scheme).Build()
 
-			Expect(r.ensureAddon(ctx, ns, "my-cluster", "cni", "cni-deployment-my-cluster", "cni-manifests-my-cluster", "ApplyOnce", "---\nkind: ConfigMap\n")).To(Succeed())
+			Expect(r.ensureAddon(ctx, owner, "my-cluster", "cni", "cni-deployment-my-cluster", "cni-manifests-my-cluster", addonsv1.ConfigMapClusterResourceSetResourceKind, "ApplyOnce", "---\nkind: ConfigMap\n")).To(Succeed())
 
 			cm := &corev1.ConfigMap{}
 			Expect(r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "cni-manifests-my-cluster"}, cm)).To(Succeed())
 			Expect(cm.Data["cni.yaml"]).To(ContainSubstring("kind: ConfigMap"))
+			Expect(cm.OwnerReferences).To(ConsistOf(HaveField("UID", owner.UID)))
 
 			crs := &addonsv1.ClusterResourceSet{}
 			Expect(r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "cni-deployment-my-cluster"}, crs)).To(Succeed())
 			Expect(crs.Spec.Strategy).To(Equal("ApplyOnce"))
 			Expect(crs.Spec.Resources).To(Equal([]addonsv1.ResourceRef{{Kind: "ConfigMap", Name: "cni-manifests-my-cluster"}}))
 			Expect(crs.Spec.ClusterSelector.MatchLabels).To(HaveKeyWithValue("cluster.x-k8s.io/cluster-name", "my-cluster"))
+			Expect(crs.OwnerReferences).To(ConsistOf(HaveField("UID", owner.UID)))
+		})
+
+		It("stores a credentials-carrying addon in a resource-set Secret and deletes its legacy ConfigMap", func() {
+			legacy := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "ccm-manifests-my-cluster", Namespace: ns}, Data: map[string]string{"ccm.yaml": "token: old"}}
+			r.Client = fake.NewClientBuilder().WithScheme(scheme).WithObjects(legacy).Build()
+
+			Expect(r.ensureAddon(ctx, owner, "my-cluster", "ccm", "ccm-deployment-my-cluster", "ccm-manifests-my-cluster", addonsv1.SecretClusterResourceSetResourceKind, "Reconcile", "token: new\n")).To(Succeed())
+
+			secret := &corev1.Secret{}
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "ccm-manifests-my-cluster"}, secret)).To(Succeed())
+			Expect(secret.Type).To(Equal(addonsv1.ClusterResourceSetSecretType))
+			Expect(string(secret.Data["ccm.yaml"])).To(Equal("token: new\n"))
+			Expect(secret.OwnerReferences).To(ConsistOf(HaveField("UID", owner.UID)))
+
+			crs := &addonsv1.ClusterResourceSet{}
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "ccm-deployment-my-cluster"}, crs)).To(Succeed())
+			Expect(crs.Spec.Resources).To(Equal([]addonsv1.ResourceRef{{Kind: "Secret", Name: "ccm-manifests-my-cluster"}}))
+
+			Expect(errors.IsNotFound(r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "ccm-manifests-my-cluster"}, &corev1.ConfigMap{}))).To(BeTrue())
+		})
+
+		It("removes the Secret and ClusterResourceSet of a disabled credentials-carrying addon", func() {
+			secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "ccm-manifests-my-cluster", Namespace: ns}}
+			crs := &addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: "ccm-deployment-my-cluster", Namespace: ns}}
+			r.Client = fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret, crs).Build()
+
+			Expect(r.removeAddon(ctx, ns, "my-cluster", "ccm", "ccm-deployment-my-cluster", "ccm-manifests-my-cluster")).To(Succeed())
+
+			Expect(errors.IsNotFound(r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "ccm-manifests-my-cluster"}, &corev1.Secret{}))).To(BeTrue())
+			Expect(errors.IsNotFound(r.Get(ctx, types.NamespacedName{Namespace: ns, Name: "ccm-deployment-my-cluster"}, &addonsv1.ClusterResourceSet{}))).To(BeTrue())
 		})
 
 		It("removes the ConfigMap and ClusterResourceSet of a disabled addon", func() {
@@ -274,9 +308,9 @@ var _ = Describe("addons", func() {
 		var xoCluster *infrastructurev1beta2.XOCluster
 
 		ccmYAML := func() string {
-			cm := &corev1.ConfigMap{}
-			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "ccm-manifests-my-cluster"}, cm)).To(Succeed())
-			return cm.Data["ccm.yaml"]
+			secret := &corev1.Secret{}
+			Expect(r.Get(ctx, types.NamespacedName{Namespace: "default", Name: "ccm-manifests-my-cluster"}, secret)).To(Succeed())
+			return string(secret.Data["ccm.yaml"])
 		}
 
 		BeforeEach(func() {
@@ -391,6 +425,7 @@ var _ = Describe("Cilium CNI addon", func() {
 		Expect(clusterv1.AddToScheme(scheme)).To(Succeed())
 		Expect(addonsv1.AddToScheme(scheme)).To(Succeed())
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(infrastructurev1beta2.AddToScheme(scheme)).To(Succeed())
 		ctx = context.Background()
 		r = &XOClusterReconciler{Client: fake.NewClientBuilder().WithScheme(scheme).Build()}
 		cluster = &clusterv1.Cluster{

@@ -52,7 +52,7 @@ var _ reconcile.Reconciler = (*XOClusterReconciler)(nil)
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=addons.cluster.x-k8s.io,resources=clusterresourcesets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 func (r *XOClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	xoCluster := &infrastructurev1beta2.XOCluster{}
@@ -516,28 +516,50 @@ func defaultAddons(a *infrastructurev1beta2.AddonsSpec) *infrastructurev1beta2.A
 	return a
 }
 
-// ensureAddon creates/updates the per-cluster ConfigMap holding the rendered
-// addon manifest and a ClusterResourceSet targeting only this cluster.
+// ensureAddon creates/updates the per-cluster ConfigMap or Secret (kind)
+// holding the rendered addon manifest and a ClusterResourceSet targeting only
+// this cluster. Addons carrying credentials use a Secret; a ConfigMap of the
+// same name left by an older release is then deleted, as it holds them too.
 //
-// Both objects live in the cluster's own namespace. This is not cosmetic: a
+// All objects live in the cluster's own namespace. This is not cosmetic: a
 // ClusterResourceSet is applied by Cluster API only to Clusters in the SAME
 // namespace, so a hardcoded "default" namespace would silently leave every
 // cluster outside it -- which is the normal case -- without CCM or CSI.
-func (r *XOClusterReconciler) ensureAddon(ctx context.Context, namespace, clusterName, addon, crsName, cmName, strategy, manifest string) error {
+//
+// The XOCluster owns the ConfigMap or Secret and the ClusterResourceSet, so
+// they are garbage collected with the cluster instead of outliving it.
+func (r *XOClusterReconciler) ensureAddon(ctx context.Context, xoCluster *infrastructurev1beta2.XOCluster, clusterName, addon, crsName, resName string, kind addonsv1.ClusterResourceSetResourceKind, strategy, manifest string) error {
 	logger := log.FromContext(ctx)
-
-	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: namespace}}
-	op, err := ctrl.CreateOrUpdate(ctx, r.Client, cm, func() error {
-		if cm.Data == nil {
-			cm.Data = make(map[string]string)
-		}
-		cm.Data[addon+".yaml"] = manifest
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("create/update ConfigMap %s: %w", cmName, err)
+	namespace := xoCluster.Namespace
+	setOwner := func(obj client.Object) error {
+		return controllerutil.SetOwnerReference(xoCluster, obj, r.Client.Scheme())
 	}
-	logger.Info("Addon manifests ConfigMap reconciled", "addon", addon, "cluster", clusterName, "configmap", cmName, "operation", op)
+
+	key := addon + ".yaml"
+	var res client.Object
+	var mutate controllerutil.MutateFn
+	if kind == addonsv1.SecretClusterResourceSetResourceKind {
+		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: resName, Namespace: namespace}}
+		res, mutate = secret, func() error {
+			secret.Type = addonsv1.ClusterResourceSetSecretType
+			secret.Data = map[string][]byte{key: []byte(manifest)}
+			return setOwner(secret)
+		}
+	} else {
+		cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: resName, Namespace: namespace}}
+		res, mutate = cm, func() error {
+			if cm.Data == nil {
+				cm.Data = make(map[string]string)
+			}
+			cm.Data[key] = manifest
+			return setOwner(cm)
+		}
+	}
+	op, err := ctrl.CreateOrUpdate(ctx, r.Client, res, mutate)
+	if err != nil {
+		return fmt.Errorf("create/update %s %s: %w", kind, resName, err)
+	}
+	logger.Info("Addon manifests reconciled", "addon", addon, "cluster", clusterName, "kind", kind, "name", resName, "operation", op)
 
 	crs := &addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: crsName, Namespace: namespace}}
 	op, err = ctrl.CreateOrUpdate(ctx, r.Client, crs, func() error {
@@ -545,32 +567,42 @@ func (r *XOClusterReconciler) ensureAddon(ctx context.Context, namespace, cluste
 			ClusterSelector: metav1.LabelSelector{
 				MatchLabels: map[string]string{"cluster.x-k8s.io/cluster-name": clusterName},
 			},
-			Resources: []addonsv1.ResourceRef{{Kind: "ConfigMap", Name: cmName}},
+			Resources: []addonsv1.ResourceRef{{Kind: string(kind), Name: resName}},
 			Strategy:  strategy,
 		}
-		return nil
+		return setOwner(crs)
 	})
 	if err != nil {
 		return fmt.Errorf("create/update ClusterResourceSet %s: %w", crsName, err)
 	}
 	logger.Info("Addon ClusterResourceSet reconciled", "addon", addon, "cluster", clusterName, "crs", crsName, "operation", op)
+
+	// Deleted after the ClusterResourceSet stops referencing it.
+	if kind == addonsv1.SecretClusterResourceSetResourceKind {
+		legacy := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: resName, Namespace: namespace}}
+		if err := r.Delete(ctx, legacy); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("delete legacy ConfigMap %s: %w", resName, err)
+		}
+	}
 	return nil
 }
 
-// removeAddon deletes the per-cluster ConfigMap and ClusterResourceSet of a
-// disabled addon. Resources already applied to the workload cluster are left
-// untouched. The objects live in the cluster's namespace, as in ensureAddon.
-func (r *XOClusterReconciler) removeAddon(ctx context.Context, namespace, clusterName, addon, crsName, cmName string) error {
+// removeAddon deletes the per-cluster ConfigMap or Secret and the
+// ClusterResourceSet of a disabled addon. Resources already applied to the
+// workload cluster are left untouched. The objects live in the cluster's
+// namespace, as in ensureAddon.
+func (r *XOClusterReconciler) removeAddon(ctx context.Context, namespace, clusterName, addon, crsName, resName string) error {
 	logger := log.FromContext(ctx)
 	for _, obj := range []client.Object{
 		&addonsv1.ClusterResourceSet{ObjectMeta: metav1.ObjectMeta{Name: crsName, Namespace: namespace}},
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: cmName, Namespace: namespace}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: resName, Namespace: namespace}},
+		&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: resName, Namespace: namespace}},
 	} {
 		if err := r.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
 	}
-	logger.Info("Addon disabled, removed ConfigMap and ClusterResourceSet", "addon", addon, "cluster", clusterName)
+	logger.Info("Addon disabled, removed manifests and ClusterResourceSet", "addon", addon, "cluster", clusterName)
 	return nil
 }
 
@@ -622,7 +654,7 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *in
 		if err := tmpl.Execute(&ccmBuf, ccmData); err != nil {
 			return fmt.Errorf("execute CCM template: %w", err)
 		}
-		if err := r.ensureAddon(ctx, xoCluster.Namespace, clusterName, "ccm", "ccm-deployment-"+clusterName, ccmCMName, "Reconcile", ccmBuf.String()); err != nil {
+		if err := r.ensureAddon(ctx, xoCluster, clusterName, "ccm", "ccm-deployment-"+clusterName, ccmCMName, addonsv1.SecretClusterResourceSetResourceKind, "Reconcile", ccmBuf.String()); err != nil {
 			return err
 		}
 	} else if err := r.removeAddon(ctx, xoCluster.Namespace, clusterName, "ccm", "ccm-deployment-"+clusterName, ccmCMName); err != nil {
@@ -652,7 +684,7 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *in
 		if err := csiTmpl.Execute(&csiBuf, csiData); err != nil {
 			return fmt.Errorf("execute CSI template: %w", err)
 		}
-		if err := r.ensureAddon(ctx, xoCluster.Namespace, clusterName, "csi", "csi-deployment-"+clusterName, csiCMName, "Reconcile", csiBuf.String()); err != nil {
+		if err := r.ensureAddon(ctx, xoCluster, clusterName, "csi", "csi-deployment-"+clusterName, csiCMName, addonsv1.ConfigMapClusterResourceSetResourceKind, "Reconcile", csiBuf.String()); err != nil {
 			return err
 		}
 	} else if err := r.removeAddon(ctx, xoCluster.Namespace, clusterName, "csi", "csi-deployment-"+clusterName, csiCMName); err != nil {
@@ -673,7 +705,7 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *in
 		if err != nil {
 			return err
 		}
-		if err := r.ensureAddon(ctx, xoCluster.Namespace, clusterName, "cni", "cni-deployment-"+clusterName, cniCMName, "ApplyOnce", manifest); err != nil {
+		if err := r.ensureAddon(ctx, xoCluster, clusterName, "cni", "cni-deployment-"+clusterName, cniCMName, addonsv1.ConfigMapClusterResourceSetResourceKind, "ApplyOnce", manifest); err != nil {
 			return err
 		}
 	default: // "none"
