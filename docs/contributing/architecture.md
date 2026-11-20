@@ -116,15 +116,17 @@ cluster, so `reconcileDelete` just removes the finalizer.
 Addons are the one place the provider reaches *into* the workload cluster. It
 does so indirectly, through Cluster API: for each addon it writes a `ConfigMap`
 holding a rendered manifest and a `ClusterResourceSet` that selects only this
-cluster.
+cluster. The CCM manifest carries the XO token, so it is stored in a `Secret`
+of type `addons.cluster.x-k8s.io/resource-set` instead; a CCM `ConfigMap` left
+by an older release is deleted.
 
 The two objects live in the **`XOCluster`'s namespace** — a deliberate detail,
 because Cluster API applies a `ClusterResourceSet` only to `Cluster`s in the
 same namespace. Both are named after the cluster:
 
-| Addon | ConfigMap | `ClusterResourceSet` | Strategy |
+| Addon | Manifests | `ClusterResourceSet` | Strategy |
 |---|---|---|---|
-| CCM | `ccm-manifests-<cluster>` | `ccm-deployment-<cluster>` | `Reconcile` |
+| CCM | `ccm-manifests-<cluster>` (Secret) | `ccm-deployment-<cluster>` | `Reconcile` |
 | CSI | `csi-manifests-<cluster>` | `csi-deployment-<cluster>` | `Reconcile` |
 | CNI | `cni-manifests-<cluster>` | `cni-deployment-<cluster>` | `ApplyOnce` |
 
@@ -148,7 +150,7 @@ embedded with `//go:embed`:
   renders Talos-specific values; with kube-proxy replacement and no explicit
   endpoint it defaults to Talos **KubePrism** (`localhost:7445`).
 
-Disabling an addon deletes its ConfigMap and `ClusterResourceSet`; whatever the
+Disabling an addon deletes its manifests and `ClusterResourceSet`; whatever the
 addon already installed in the workload cluster is left in place.
 
 !!! note "`ApplyOnce` versus `Reconcile`"
