@@ -151,7 +151,8 @@ embedded with `//go:embed`:
   endpoint it defaults to Talos **KubePrism** (`localhost:7445`).
 
 Disabling an addon deletes its manifests and `ClusterResourceSet`; whatever the
-addon already installed in the workload cluster is left in place.
+addon already installed in the workload cluster is left in place. Both objects
+are owned by the `XOCluster`, so deleting the cluster garbage-collects them.
 
 !!! note "`ApplyOnce` versus `Reconcile`"
 

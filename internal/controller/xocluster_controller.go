@@ -525,8 +525,15 @@ func defaultAddons(a *infrastructurev1beta2.AddonsSpec) *infrastructurev1beta2.A
 // ClusterResourceSet is applied by Cluster API only to Clusters in the SAME
 // namespace, so a hardcoded "default" namespace would silently leave every
 // cluster outside it -- which is the normal case -- without CCM or CSI.
-func (r *XOClusterReconciler) ensureAddon(ctx context.Context, namespace, clusterName, addon, crsName, resName string, kind addonsv1.ClusterResourceSetResourceKind, strategy, manifest string) error {
+//
+// The XOCluster owns the ConfigMap or Secret and the ClusterResourceSet, so
+// they are garbage collected with the cluster instead of outliving it.
+func (r *XOClusterReconciler) ensureAddon(ctx context.Context, xoCluster *infrastructurev1beta2.XOCluster, clusterName, addon, crsName, resName string, kind addonsv1.ClusterResourceSetResourceKind, strategy, manifest string) error {
 	logger := log.FromContext(ctx)
+	namespace := xoCluster.Namespace
+	setOwner := func(obj client.Object) error {
+		return controllerutil.SetOwnerReference(xoCluster, obj, r.Client.Scheme())
+	}
 
 	key := addon + ".yaml"
 	var res client.Object
@@ -536,7 +543,7 @@ func (r *XOClusterReconciler) ensureAddon(ctx context.Context, namespace, cluste
 		res, mutate = secret, func() error {
 			secret.Type = addonsv1.ClusterResourceSetSecretType
 			secret.Data = map[string][]byte{key: []byte(manifest)}
-			return nil
+			return setOwner(secret)
 		}
 	} else {
 		cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: resName, Namespace: namespace}}
@@ -545,7 +552,7 @@ func (r *XOClusterReconciler) ensureAddon(ctx context.Context, namespace, cluste
 				cm.Data = make(map[string]string)
 			}
 			cm.Data[key] = manifest
-			return nil
+			return setOwner(cm)
 		}
 	}
 	op, err := ctrl.CreateOrUpdate(ctx, r.Client, res, mutate)
@@ -563,7 +570,7 @@ func (r *XOClusterReconciler) ensureAddon(ctx context.Context, namespace, cluste
 			Resources: []addonsv1.ResourceRef{{Kind: string(kind), Name: resName}},
 			Strategy:  strategy,
 		}
-		return nil
+		return setOwner(crs)
 	})
 	if err != nil {
 		return fmt.Errorf("create/update ClusterResourceSet %s: %w", crsName, err)
@@ -647,7 +654,7 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *in
 		if err := tmpl.Execute(&ccmBuf, ccmData); err != nil {
 			return fmt.Errorf("execute CCM template: %w", err)
 		}
-		if err := r.ensureAddon(ctx, xoCluster.Namespace, clusterName, "ccm", "ccm-deployment-"+clusterName, ccmCMName, addonsv1.SecretClusterResourceSetResourceKind, "Reconcile", ccmBuf.String()); err != nil {
+		if err := r.ensureAddon(ctx, xoCluster, clusterName, "ccm", "ccm-deployment-"+clusterName, ccmCMName, addonsv1.SecretClusterResourceSetResourceKind, "Reconcile", ccmBuf.String()); err != nil {
 			return err
 		}
 	} else if err := r.removeAddon(ctx, xoCluster.Namespace, clusterName, "ccm", "ccm-deployment-"+clusterName, ccmCMName); err != nil {
@@ -677,7 +684,7 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *in
 		if err := csiTmpl.Execute(&csiBuf, csiData); err != nil {
 			return fmt.Errorf("execute CSI template: %w", err)
 		}
-		if err := r.ensureAddon(ctx, xoCluster.Namespace, clusterName, "csi", "csi-deployment-"+clusterName, csiCMName, addonsv1.ConfigMapClusterResourceSetResourceKind, "Reconcile", csiBuf.String()); err != nil {
+		if err := r.ensureAddon(ctx, xoCluster, clusterName, "csi", "csi-deployment-"+clusterName, csiCMName, addonsv1.ConfigMapClusterResourceSetResourceKind, "Reconcile", csiBuf.String()); err != nil {
 			return err
 		}
 	} else if err := r.removeAddon(ctx, xoCluster.Namespace, clusterName, "csi", "csi-deployment-"+clusterName, csiCMName); err != nil {
@@ -698,7 +705,7 @@ func (r *XOClusterReconciler) reconcileAddons(ctx context.Context, xoCluster *in
 		if err != nil {
 			return err
 		}
-		if err := r.ensureAddon(ctx, xoCluster.Namespace, clusterName, "cni", "cni-deployment-"+clusterName, cniCMName, addonsv1.ConfigMapClusterResourceSetResourceKind, "ApplyOnce", manifest); err != nil {
+		if err := r.ensureAddon(ctx, xoCluster, clusterName, "cni", "cni-deployment-"+clusterName, cniCMName, addonsv1.ConfigMapClusterResourceSetResourceKind, "ApplyOnce", manifest); err != nil {
 			return err
 		}
 	default: // "none"
